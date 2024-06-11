@@ -19,14 +19,14 @@ setup(
     maintainer='Hello Robot Inc.',
     maintainer_email='support@hello-robot.com',
     description='The stretch_tablet package',
-    # license='Apache 2.0',
+    license='Apache 2.0',
     tests_require=['pytest'],
-    # entry_points={
-    #     'console_scripts': [
-    #         'detect_objects = stretch_tablet.detect_objects:main',
-    #         'detect_faces = stretch_tablet.detect_faces:main',
-    #         'detect_nearest_mouth = stretch_tablet.detect_nearest_mouth:main',
-    #         'detect_body_landmarks = stretch_tablet.detect_body_landmarks:main'
-    #     ],
-    # },
+    entry_points={
+        'console_scripts': [
+            # 'detect_objects = stretch_tablet.detect_objects:main',
+            'detect_faces = stretch_tablet.detect_faces:main',
+            # 'detect_nearest_mouth = stretch_tablet.detect_nearest_mouth:main',
+            'detect_body_landmarks = stretch_tablet.detect_body_landmarks:main'
+        ],
+    },
 )

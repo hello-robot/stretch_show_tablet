@@ -9,7 +9,7 @@ import cv2
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_msgs.msg import Bool
 from visualization_msgs.msg import MarkerArray
-from . import detection_2d_to_3d as d2
+from stretch_deep_perception import detection_2d_to_3d as d2
 
 class ToggleableDetectionNode(DetectionNode):
     def __init__(self, detector, default_marker_name, node_name,

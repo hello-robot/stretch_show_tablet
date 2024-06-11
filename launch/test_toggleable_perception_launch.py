@@ -47,5 +47,5 @@ def generate_launch_description():
         d435i_launch,
         detect_body_landmarks,
         detect_faces,
-        rviz_node,
+        # rviz_node,
         ])
