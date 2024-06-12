@@ -32,6 +32,12 @@ def generate_launch_description():
         executable='detect_faces',
         output='screen',
         )
+    
+    record_data = Node(
+        package='stretch_tablet',
+        executable='record_test_data',
+        output='screen'
+    )
 
     rviz_config_path = os.path.join(stretch_deep_perception_path, 'rviz', 'body_landmark_detection.rviz')
 
@@ -47,5 +53,6 @@ def generate_launch_description():
         d435i_launch,
         detect_body_landmarks,
         detect_faces,
+        record_data,
         # rviz_node,  # uncomment if not running headless
         ])
