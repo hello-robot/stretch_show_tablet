@@ -3,28 +3,16 @@ import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
 import json
 
-def pose2SE3(pose) -> sp.SE3:
-    pos = pose["position"]
-    ori = pose["orientation"]
+EPS = 10.e-9
 
-    position = np.array([pos["x"], pos["y"], pos["z"]])
-    orientation = np.array([ori["x"], ori["y"], ori["z"], ori["w"]])
-
-    r = R.from_quat(orientation).as_matrix()
-    return sp.SE3(r, position)
-
-def points2np(points: list) -> np.ndarray:
-    points_np = np.zeros([3, len(points)])
-    for i in range(len(points)):
-        point = points[i]
-        points_np[:, i] = [point["x"], point["y"], point["z"]]
-
-    return points_np
-
-# def points2SE3(points):
-#     points_np = points2np(points)
-#     points_se3 = np.array([sp.SE3(np.eye(3), points_np[:, i]) for i in range(points_np.shape[1])])
-#     return points_se3
+def load_bad_json(file):
+    with open(file) as f:
+        data_string = json.load(f)
+        data_string = data_string.replace("'", "\"")
+        data_string = data_string.replace("(", "[")
+        data_string = data_string.replace(")", "]")
+        data = json.loads(data_string)
+    return data
 
 landmark_names = ['nose', 'neck',
                 'right_shoulder', 'right_elbow', 'right_wrist',
@@ -47,56 +35,49 @@ class HumanKinematics:
 
 class HumanPoseEstimate:
     def __init__(self):
-        self.camera2body_pose = sp.SE3()
-        self.camera2face_pose = sp.SE3()
+        self.world2camera_pose = sp.SE3()
         self.body_points = None
         self.face_points = None
 
     def load_face_estimate(self, file):
-        with open(file) as f:
-            data = json.load(f)
-        
-        root = data[0]
-        estimate = data[1]
-        
-        self.camera2face_pose = pose2SE3(root["pose"])
-        self.face_points = points2np(estimate["points"])
+        data = load_bad_json(file)
+        self.face_points = np.array([v for v in data.values()]).T
 
     def load_body_estimate(self, file):
-        with open(file) as f:
+        data = load_bad_json(file)
+        self.body_points = np.array([v for v in data.values()]).T
+
+        not_visible = landmark_names.copy()
+        for key, value in data.items():
+            if np.linalg.norm(value) > EPS:
+                not_visible.remove(key)
+
+        print("Cannot see: " + str(not_visible))
+
+    def load_camera_pose(self, camera_file):
+        with open(camera_file) as f:
             data = json.load(f)
 
-        root = data[0]
-        print(json.dumps(root, indent=2))
-        # estimate = data[1]
+        position = np.array(data[0])
+        quaternion = np.array(data[1])
 
-        self.camera2body_pose = pose2SE3(root["pose"])
-        self.body_points = points2np(root["points"])
+        rotation_matrix = R.from_quat(quaternion).as_matrix()
 
-        can_see = [True for _ in range(self.body_points.shape[1])]
-        print(self.body_points.shape)
-        print(len(landmark_names))
-        for i in range(self.body_points.shape[1]):
-            if all(self.body_points[:, i] == np.array([0., 0., 0.])):
-                can_see[i] = False
+        self.world2camera_pose = sp.SE3(rotation_matrix, position.T)
+        self.world2camera_pose = self.world2camera_pose.inverse()
 
-        # print("Can see:")
-        # print([landmark_names[i] + str(self.body_points[:, i]) for i in range(len(landmark_names)) if can_see[i]])
-        # print("Cannot see:")
-        # print([landmark_names[i] for i in range(len(can_see)) if not can_see[i]])
-
-    def get_face_world(self, world2camera_pose: sp.SE3):
+    def get_face_world(self):
         if self.face_points is None:
             raise ValueError
         
-        world_points = sp.transform_points_by_poses(world2camera_pose.matrix3x4().ravel(), self.face_points.T).T
+        world_points = sp.transform_points_by_poses(self.world2camera_pose.matrix3x4().ravel(), self.face_points.T).T
         return world_points
     
-    def get_body_world(self, world2camera_pose: sp.SE3):
+    def get_body_world(self):
         if self.body_points is None:
             raise ValueError
         
-        world_points = sp.transform_points_by_poses(world2camera_pose.matrix3x4().ravel(), self.body_points.T).T
+        world_points = sp.transform_points_by_poses(self.world2camera_pose.matrix3x4().ravel(), self.body_points.T).T
         return world_points
 
 class Human:
@@ -105,23 +86,25 @@ class Human:
         self.pose_estimate = HumanPoseEstimate()
 
 def generate_test_human(data_dir):
-    body_path = data_dir + "body_1.json"
-    face_path = data_dir + "face_1.json"
+    i = 6
+    body_path = data_dir + "body_" + str(i) + ".json"
+    face_path = data_dir + "face_" + str(i) + ".json"
+    camera_path = data_dir + "camera_" + str(i) + ".json"
 
     human = Human()
     human.pose_estimate.load_face_estimate(face_path)
     human.pose_estimate.load_body_estimate(body_path)
+    human.pose_estimate.load_camera_pose(camera_path)
     return human
 
 def main(args):
-    test_camera_pose = sp.SE3(np.array([[0,0,1],[0,1,0],[-1,0,0]]), np.array([0, 0, 1]))
     human = generate_test_human(args.data_dir)
 
     import matplotlib.pyplot as plt
     f = plt.figure()
     a = f.add_subplot(1, 1, 1, projection='3d')
-    a.scatter(*human.pose_estimate.get_face_world(test_camera_pose))
-    a.scatter(*human.pose_estimate.get_body_world(test_camera_pose))
+    a.scatter(*human.pose_estimate.get_face_world())
+    a.scatter(*human.pose_estimate.get_body_world())
     a.set_xlabel('x (m)')
     a.set_ylabel('y (m)')
     a.set_zlabel('z (m)')
@@ -130,14 +113,17 @@ def main(args):
     # a.set_ylim([-2, 2])
     # a.set_zlim([0, 2])
 
-    a.set_xlim([1, 2])
-    a.set_ylim([-.4, .4])
-    a.set_zlim([0, 1.2])
+    # a.set_xlim([1, 2])
+    # a.set_ylim([-.4, .4])
+    # a.set_zlim([0, 1.2])
+
+    a.set_xlim([-0.5, 0.5])
+    a.set_ylim([-2., -1.])
+    a.set_zlim([0., 2.])
+
     a.set_aspect('equal')
 
     plt.show()
-    # human = Human()
-    # print(human.kinematics.root)
 
 if __name__ == '__main__':
     import argparse
