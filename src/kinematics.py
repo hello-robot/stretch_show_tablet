@@ -26,6 +26,15 @@ def points2np(points: list) -> np.ndarray:
 #     points_se3 = np.array([sp.SE3(np.eye(3), points_np[:, i]) for i in range(points_np.shape[1])])
 #     return points_se3
 
+def load_bad_json(file):
+    with open(file) as f:
+        data_string = json.load(f)
+        data_string = data_string.replace("'", "\"")
+        data_string = data_string.replace("(", "[")
+        data_string = data_string.replace(")", "]")
+        data = json.loads(data_string)
+    return data
+
 landmark_names = ['nose', 'neck',
                 'right_shoulder', 'right_elbow', 'right_wrist',
                 'left_shoulder', 'left_elbow', 'left_wrist',
@@ -53,32 +62,12 @@ class HumanPoseEstimate:
         self.face_points = None
 
     def load_face_estimate(self, file):
-        with open(file) as f:
-            data = json.load(f)
-        
-        root = data[0]
-        estimate = data[1]
-        
-        self.camera2face_pose = pose2SE3(root["pose"])
-        self.face_points = points2np(estimate["points"])
+        data = load_bad_json(file)
+        self.face_points = np.array([v for v in data.values()]).T
 
     def load_body_estimate(self, file):
-        with open(file) as f:
-            data = json.load(f)
-
-        root = data[0]
-        print(json.dumps(root, indent=2))
-        # estimate = data[1]
-
-        self.camera2body_pose = pose2SE3(root["pose"])
-        self.body_points = points2np(root["points"])
-
-        can_see = [True for _ in range(self.body_points.shape[1])]
-        print(self.body_points.shape)
-        print(len(landmark_names))
-        for i in range(self.body_points.shape[1]):
-            if all(self.body_points[:, i] == np.array([0., 0., 0.])):
-                can_see[i] = False
+        data = load_bad_json(file)
+        self.body_points = np.array([v for v in data.values()]).T
 
         # print("Can see:")
         # print([landmark_names[i] + str(self.body_points[:, i]) for i in range(len(landmark_names)) if can_see[i]])
