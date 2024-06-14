@@ -3,7 +3,7 @@
 import cv2
 import sys
 from stretch_deep_perception import head_estimator as he
-from . import toggleable_detection_node as dn
+from . import toggleable_detection_node as tdn
 from stretch_deep_perception import deep_learning_model_options as do
 
 
@@ -46,7 +46,7 @@ def main():
     node_name = 'DetectFacesNode'
     topic_base_name = 'faces'
     fit_plane = False
-    node = dn.DetectionNode(detector,
+    node = tdn.ToggleableDetectionNode(detector,
                             default_marker_name,
                             node_name,
                             topic_base_name,

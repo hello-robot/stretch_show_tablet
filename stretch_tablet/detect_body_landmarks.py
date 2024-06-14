@@ -5,7 +5,7 @@ import sys
 import rclpy
 
 from stretch_deep_perception import body_landmark_detector as bl
-from . import toggleable_detection_node as dn
+from . import toggleable_detection_node as tdn
 from stretch_deep_perception import deep_learning_model_options as do
         
 def main():
@@ -24,7 +24,7 @@ def main():
     node_name = 'DetectBodyLandmarksNode'
     topic_base_name = 'body_landmarks'
     fit_plane = True
-    node = dn.DetectionNode(detector, default_marker_name, node_name, topic_base_name, fit_plane)
+    node = tdn.ToggleableDetectionNode(detector, default_marker_name, node_name, topic_base_name, fit_plane)
     node.main()
     # try:
     #     rospy.spin()

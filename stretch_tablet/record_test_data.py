@@ -3,112 +3,75 @@ import rclpy
 import rclpy.logging
 
 import rclpy.time
-from visualization_msgs.msg import MarkerArray, Marker
+from std_msgs.msg import String
 
-import time
-import json
-
-def marker_to_dict(marker: Marker):
-    marker_dict = {
-        'header': {
-            'stamp': {
-                'secs': marker.header.stamp.sec,
-                'nsecs': marker.header.stamp.nanosec
-            },
-            'frame_id': marker.header.frame_id
-        },
-        'ns': marker.ns,
-        'id': marker.id,
-        'type': marker.type,
-        'action': marker.action,
-        'pose': {
-            'position': {
-                'x': marker.pose.position.x,
-                'y': marker.pose.position.y,
-                'z': marker.pose.position.z
-            },
-            'orientation': {
-                'x': marker.pose.orientation.x,
-                'y': marker.pose.orientation.y,
-                'z': marker.pose.orientation.z,
-                'w': marker.pose.orientation.w
-            }
-        },
-        'scale': {
-            'x': marker.scale.x,
-            'y': marker.scale.y,
-            'z': marker.scale.z
-        },
-        'color': {
-            'r': marker.color.r,
-            'g': marker.color.g,
-            'b': marker.color.b,
-            'a': marker.color.a
-        },
-        'lifetime': {
-            'secs': marker.lifetime.sec,
-            'nsecs': marker.lifetime.nanosec
-        },
-        'frame_locked': marker.frame_locked,
-        'points': [{'x': p.x, 'y': p.y, 'z': p.z} for p in marker.points],
-        'colors': [{'r': c.r, 'g': c.g, 'b': c.b, 'a': c.a} for c in marker.colors],
-        'text': marker.text,
-        'mesh_resource': marker.mesh_resource,
-        'mesh_use_embedded_materials': marker.mesh_use_embedded_materials
-    }
-    
-    return marker_dict
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 
 class DataRecorder():
     def __init__(self):
         self.node = rclpy.create_node('data_recorder')
         # sub
-        self.sub_face_markers = self.node.create_subscription(
-            MarkerArray,
-            "/faces/marker_array",
-            callback=self.callback_face_markers,
+        self.sub_face_landmarks = self.node.create_subscription(
+            String,
+            "/faces/landmarks_3d",
+            callback=self.callback_face_landmarks,
             qos_profile=1
         )
 
-        self.sub_body_markers = self.node.create_subscription(
-            MarkerArray,
-            "/body_landmarks/marker_array",
-            callback=self.callback_body_markers,
+        self.sub_body_landmarks = self.node.create_subscription(
+            String,
+            "/body_landmarks/landmarks_3d",
+            callback=self.callback_body_landmarks,
             qos_profile=1
         )
+
+        # tf
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(buffer=self.tf_buffer, node=self.node)
 
         # state
-        self.face_marker_array = None
-        self.body_marker_array = None
+        self.face_landmarks = None
+        self.body_landmarks = None
+        self.latest_camera_pose = None
 
     # callbacks
-    def callback_face_markers(self, msg: MarkerArray):
-        print('callback_f')
-        self.face_marker_array = msg
+    def callback_face_landmarks(self, msg: String):
+        # print('callback_f')
+        self.face_landmarks = msg.data
 
-    def callback_body_markers(self, msg: MarkerArray):
-        print('callback_b')
-        self.body_marker_array = msg
+    def callback_body_landmarks(self, msg: String):
+        # print('callback_b')
+        self.body_landmarks = msg.data
     
-    def write_data(self, face_filename, body_filename):
-        print("Writing to " + face_filename + " and " + body_filename)
+    def clear_landmarks(self):
+        self.face_landmarks = None
+        self.body_landmarks = None
+
+    def write_pose_data(self, face_filename, body_filename):
+        # print("Writing pose data to " + face_filename + " and " + body_filename)
         try:
             face_file = open(face_filename, 'w')
             body_file = open(body_filename, 'w')
         except:
             return
         
-        face_markers = self.face_marker_array.markers
-        body_markers = self.body_marker_array.markers
-
-        face_markers = [marker_to_dict(m) for m in face_markers]
-        body_markers = [marker_to_dict(m) for m in body_markers]
-
-        json.dump(face_markers, face_file)
-        json.dump(body_markers, body_file)
+        face_file.write(self.face_landmarks)
+        body_file.write(self.body_landmarks)
 
         face_file.close()
         body_file.close()
+
+    def write_camera_data(self, camera_filename):
+        # print("Writing camera data to " + camera_filename)
+        try:
+            camera_file = open(camera_filename, 'w')
+        except:
+            return
+        
+        camera_file.write(str(self.latest_camera_pose))
+
+        camera_file.close()
 
     # main
     def main(self):
@@ -121,13 +84,31 @@ class DataRecorder():
         rate = self.node.create_rate(10., self.node.get_clock())
 
         while rclpy.ok():
-            print(self.face_marker_array)
-            print(self.body_marker_array)
-            if self.face_marker_array is not None and self.body_marker_array is not None:
-                print('b')
+            # print(self.face_marker_array)
+            # print(self.body_marker_array)
+            if self.face_landmarks is not None and self.body_landmarks is not None:
+                # get camera pose
+                try:
+                    t = self.tf_buffer.lookup_transform(
+                            "camera_color_optical_frame",
+                            "odom",
+                            rclpy.time.Time())
+                    
+                    camera_pos = t.transform.translation
+                    camera_ori = t.transform.rotation
+                    self.latest_camera_pose = [[camera_pos.x, camera_pos.y, camera_pos.z],
+                                               [camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]]
+                except Exception as ex:
+                    print(ex)                
+                
+                # set up data
                 face_file = data_dir + "face_" + str(i) + ".json"
                 body_file = data_dir + "body_" + str(i) + ".json"
-                self.write_data(face_file, body_file)
+                camera_file = data_dir + "camera_" + str(i) + ".json"
+                self.write_pose_data(face_file, body_file)
+                self.write_camera_data(camera_file)
+                self.clear_landmarks()
+
                 i += 1
             
             if i >= max_i:

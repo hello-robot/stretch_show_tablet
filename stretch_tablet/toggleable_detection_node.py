@@ -7,9 +7,11 @@ import message_filters
 import ros2_numpy
 import cv2
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from visualization_msgs.msg import MarkerArray
 from stretch_deep_perception import detection_2d_to_3d as d2
+
+import json
 
 class ToggleableDetectionNode(DetectionNode):
     def __init__(self, detector, default_marker_name, node_name,
@@ -20,7 +22,7 @@ class ToggleableDetectionNode(DetectionNode):
                         topic_base_name, fit_plane, min_box_side_m,
                         max_box_side_m, modify_3d_detections)
         
-        self.toggled_on = False
+        self.toggled_on = True
 
     def callback_toggle(self, msg: Bool):
         self.toggled_on = msg.data
@@ -82,6 +84,10 @@ class ToggleableDetectionNode(DetectionNode):
 
         self.marker_collection.update(detections_3d, self.rgb_image_timestamp)
         
+        landmark_string = String()
+        landmark_string.data = json.dumps(str(detections_3d))
+        self.landmark_3d_pub.publish(landmark_string)
+        
         marker_array = self.marker_collection.get_ros_marker_array(self.landmark_color_dict)
         include_axes = True
         include_z_axes = False
@@ -126,8 +132,10 @@ class ToggleableDetectionNode(DetectionNode):
 
         self.visualize_object_detections_pub = self.node.create_publisher(Image, '/' + self.topic_base_name + '/color/image_with_bb', 1)
 
+        self.landmark_3d_pub = self.node.create_publisher(String, '/' + self.topic_base_name + '/landmarks_3d', 1)
+
         # toggle
-        self.toggle_sub = self.node.create_subscription(Bool, topic="/detection/toggle", callback=self.callback_toggle)
+        self.toggle_sub = self.node.create_subscription(Bool, topic="/detection/toggle", callback=self.callback_toggle, qos_profile=1)
 
         try:
             rclpy.spin(self.node)
