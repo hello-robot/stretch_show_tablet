@@ -1,6 +1,9 @@
 import numpy as np
 import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
+
+from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
+
 import json
 
 EPS = 10.e-9
@@ -111,10 +114,25 @@ class Human:
 
 class TabletPlanner:
     def __init__(self):
-        pass
+        self.controlled_joints = [
+            "x_prismatic_joint",
+            "joint_lift",
+            "joint_arm_l0",
+            "joint_arm_l1",
+            "joint_arm_l2",
+            "joint_arm_l3",
+            "joint_wrist_yaw",
+            "joint_wrist_pitch",
+            "joint_wrist_roll"
+        ]
+        self.ik_solver = PinocchioIKSolver(
+            urdf_path="/home/hello-robot/ament_ws/src/stretch_tablet/description/stretch_re3.urdf",
+            ee_link_name="link_grasp_center",
+            controlled_joints=self.controlled_joints
+        )
 
     @staticmethod
-    def in_front_of_eyes(human: Human):
+    def in_front_of_eyes(human: Human) -> sp.SE3:
         """
         Relative to eyes / forehead
         Returns in world frame
@@ -141,6 +159,34 @@ class TabletPlanner:
     def reachable(human: Human):
         pass
 
+    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3()):
+        # TODO: use world_base_link to transform the target into base link frame
+        target_base_frame = world_base_link.inverse() * world_target
+        pos_desired = target_base_frame.translation()
+        quat_desired = R.from_matrix(target_base_frame.rotationMatrix()).as_quat()
+        q_soln, success, stats = self.ik_solver.compute_ik(
+            pos_desired=pos_desired,
+            quat_desired=quat_desired,
+        )
+
+        base_drive = q_soln[0]
+        lift = q_soln[1]
+        arm_ext = sum(q_soln[2:5])
+        yaw = q_soln[6]
+        pitch = q_soln[7]
+        roll = q_soln[8]
+        
+        result = {
+            "base": base_drive,
+            "lift": lift,
+            "arm_extension": arm_ext,
+            "yaw": yaw,
+            "pitch": pitch,
+            "roll": roll,
+        }
+
+        return result
+
 def generate_test_human(data_dir, i=6):
     body_path = data_dir + "body_" + str(i) + ".json"
     face_path = data_dir + "face_" + str(i) + ".json"
@@ -156,10 +202,15 @@ def main(args):
     import matplotlib.pyplot as plt
     from plot_tools import plot_coordinate_frame
 
+    tp = TabletPlanner()
+
     # for i in range(20):
     for i in [10]:
         human = generate_test_human(args.data_dir, i)
         tablet = TabletPlanner.in_front_of_eyes(human)
+        q_soln = tp.ik(tablet)
+        print(q_soln)
+        return
         
         f = plt.figure()
         a = f.add_subplot(1, 1, 1, projection='3d')
