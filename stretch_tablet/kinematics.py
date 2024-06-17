@@ -9,9 +9,13 @@ import json
 EPS = 10.e-9
 
 def load_bad_json_data(data_string):
+    # print('uh')
+    # print(data_string)
     data_string = data_string.replace("'", "\"")
     data_string = data_string.replace("(", "[")
     data_string = data_string.replace(")", "]")
+    # print('yeah')
+    # print(data_string)
     data = json.loads(data_string)
     return data
 
@@ -79,8 +83,11 @@ class HumanPoseEstimate:
 
         rotation_matrix = R.from_quat(quaternion).as_matrix()
 
-        self.world2camera_pose = sp.SE3(rotation_matrix, position.T)
-        self.world2camera_pose = self.world2camera_pose.inverse()
+        camera2world_pose = sp.SE3(rotation_matrix, position.T)
+        self.set_camera_pose(camera2world_pose.inverse())
+
+    def set_camera_pose(self, world2camera_pose: sp.SE3):
+        self.world2camera_pose = world2camera_pose
 
     def clear_estimates(self):
         self.body_estimate = None
@@ -219,7 +226,7 @@ def generate_test_human(data_dir, i=6):
 
 def main(args):
     import matplotlib.pyplot as plt
-    from plot_tools import plot_coordinate_frame
+    # from plot_tools import plot_coordinate_frame
 
     tp = TabletPlanner()
 
