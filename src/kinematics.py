@@ -8,14 +8,17 @@ import json
 
 EPS = 10.e-9
 
+def load_bad_json_data(data_string):
+    data_string = data_string.replace("'", "\"")
+    data_string = data_string.replace("(", "[")
+    data_string = data_string.replace(")", "]")
+    data = json.loads(data_string)
+    return data
+
 def load_bad_json(file):
     with open(file) as f:
         data_string = json.load(f)
-        data_string = data_string.replace("'", "\"")
-        data_string = data_string.replace("(", "[")
-        data_string = data_string.replace(")", "]")
-        data = json.loads(data_string)
-    return data
+        return load_bad_json_data(data_string)
 
 landmark_names = ['nose', 'neck',
                 'right_shoulder', 'right_elbow', 'right_wrist',
@@ -46,13 +49,15 @@ class HumanPoseEstimate:
 
     def load_face_estimate(self, file):
         data = load_bad_json(file)
+        self.set_face_estimate(data)
+
+    def set_face_estimate(self, data):
         self.face_estimate = data
         self.face_points = np.array([v for v in data.values()]).T
 
     def load_body_estimate(self, file):
         data = load_bad_json(file)
-        self.body_estimate = data
-        self.body_points = np.array([v for v in data.values()]).T
+        self.set_body_estimate(data)
 
         not_visible = landmark_names.copy()
         for key, value in data.items():
@@ -60,6 +65,10 @@ class HumanPoseEstimate:
                 not_visible.remove(key)
 
         print("Cannot see: " + str(not_visible))
+
+    def set_body_estimate(self, data):
+        self.body_estimate = data
+        self.body_points = np.array([v for v in data.values()]).T
 
     def load_camera_pose(self, camera_file):
         with open(camera_file) as f:
@@ -72,6 +81,16 @@ class HumanPoseEstimate:
 
         self.world2camera_pose = sp.SE3(rotation_matrix, position.T)
         self.world2camera_pose = self.world2camera_pose.inverse()
+
+    def clear_estimates(self):
+        self.body_estimate = None
+        self.body_points = None
+        self.face_estimate = None
+        self.face_points = None
+
+    def is_populated(self):
+        return True if self.body_estimate is not None and self.body_points is not None \
+            and self.face_estimate is not None and self.face_points is not None else False
 
     def get_point_world(self, point):
         point = np.array(point).T
