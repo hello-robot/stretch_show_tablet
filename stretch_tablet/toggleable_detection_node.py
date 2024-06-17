@@ -84,8 +84,12 @@ class ToggleableDetectionNode(DetectionNode):
 
         self.marker_collection.update(detections_3d, self.rgb_image_timestamp)
         
+        if len(detections_3d) > 0:
+            landmarks_3d = detections_3d[0]["landmarks_3d"]
+        else:
+            landmarks_3d = None
         landmark_string = String()
-        landmark_string.data = json.dumps(str(detections_3d))
+        landmark_string.data = json.dumps(str(landmarks_3d))
         self.landmark_3d_pub.publish(landmark_string)
         
         marker_array = self.marker_collection.get_ros_marker_array(self.landmark_color_dict)
