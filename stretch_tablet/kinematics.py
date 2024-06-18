@@ -9,13 +9,10 @@ import json
 EPS = 10.e-9
 
 def load_bad_json_data(data_string):
-    # print('uh')
-    # print(data_string)
     data_string = data_string.replace("'", "\"")
     data_string = data_string.replace("(", "[")
     data_string = data_string.replace(")", "]")
-    # print('yeah')
-    # print(data_string)
+
     data = json.loads(data_string)
     return data
 
@@ -83,6 +80,7 @@ class HumanPoseEstimate:
 
         rotation_matrix = R.from_quat(quaternion).as_matrix()
 
+        # NOTE: this is backwards bc test code is wrong
         camera2world_pose = sp.SE3(rotation_matrix, position.T)
         self.set_camera_pose(camera2world_pose.inverse())
 

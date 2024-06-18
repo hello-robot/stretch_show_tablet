@@ -9,14 +9,20 @@ from tf2_ros.transform_listener import TransformListener
 import sophuspy as sp
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-import time
 
-# from stretch_tablet.src.kinematics import Human, TabletPlanner, load_bad_json_data
+import json
 from .kinematics import Human, TabletPlanner, load_bad_json_data
 
 class ShowTabletNode(Node):
     def __init__(self):
         super().__init__("show_tablet_node")
+
+        # pub
+        self.pub_tablet_goal = self.create_publisher(
+            String,
+            "/stretch_tablet/goal",
+            qos_profile=1
+        )
 
         # sub
         self.sub_face_landmarks = self.create_subscription(
@@ -79,8 +85,10 @@ class ShowTabletNode(Node):
         while rclpy.ok():
             try:
                 t = self.tf_buffer.lookup_transform(
-                        "camera_color_optical_frame",
+                        # "camera_color_optical_frame",
+                        # "odom",
                         "odom",
+                        "camera_color_optical_frame",
                         rclpy.time.Time())
                 
                 camera_pos = t.transform.translation
@@ -96,7 +104,10 @@ class ShowTabletNode(Node):
                     # update ik
                     tablet_pose = self.planner.in_front_of_eyes(human=self.human)
                     ik_soln = self.planner.ik(tablet_pose)
-                    print(ik_soln)
+                    # print(ik_soln)
+                    msg = String()
+                    msg.data = json.dumps(ik_soln)
+                    self.pub_tablet_goal.publish(msg)
 
                     # clear buffer
                     self.human.pose_estimate.clear_estimates()
