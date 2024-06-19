@@ -4,6 +4,7 @@ from scipy.spatial.transform import Rotation as R
 
 from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
 
+import os
 import json
 
 EPS = 10.e-9
@@ -28,6 +29,24 @@ landmark_names = ['nose', 'neck',
                 'left_hip', 'left_knee', 'left_ankle',
                 'right_eye', 'left_eye',
                 'right_ear', 'left_ear']
+
+def spherical_to_cartesian(radius, azimuth, elevation):
+    """
+    Convert spherical coordinates to Cartesian coordinates.
+    
+    Args:
+        radius (float): The radius or radial distance.
+        azimuth (float): The azimuth angle in radians.
+        elevation (float): The elevation angle in radians.
+    
+    Returns:
+        list: A list containing the Cartesian coordinates (x, y, z).
+    """
+    x = radius * np.sin(elevation) * np.cos(azimuth)
+    y = radius * np.sin(elevation) * np.sin(azimuth)
+    z = radius * np.cos(elevation)
+    
+    return [x, y, z]
 
 class HumanKinematics:
     def __init__(self):
@@ -139,7 +158,8 @@ class Human:
 class TabletPlanner:
     def __init__(self):
         self.controlled_joints = [
-            "x_prismatic_joint",
+            # "x_prismatic_joint",
+            "z_revolute_joint",
             "joint_lift",
             "joint_arm_l0",
             "joint_arm_l1",
@@ -149,9 +169,11 @@ class TabletPlanner:
             "joint_wrist_pitch",
             "joint_wrist_roll"
         ]
+        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_re3_revolute.urdf")
         self.ik_solver = PinocchioIKSolver(
-            urdf_path="/home/hello-robot/ament_ws/src/stretch_tablet/description/stretch_re3.urdf",
+            urdf_path=urdf_path,
             ee_link_name="link_grasp_center",
+            # ee_link_name="link_gripper_s3_body",
             controlled_joints=self.controlled_joints
         )
 
@@ -209,7 +231,7 @@ class TabletPlanner:
             "roll": roll,
         }
 
-        return result
+        return result, stats
 
 def generate_test_human(data_dir, i=6):
     body_path = data_dir + "body_" + str(i) + ".json"
@@ -222,7 +244,34 @@ def generate_test_human(data_dir, i=6):
     human.pose_estimate.load_camera_pose(camera_path)
     return human
 
+def test_spherical_coordinates():
+    azimuths = [-30., 0., 30.]
+    angles = [90., 112.5, 135.]
+    radius = 1.
+
+    azimuths = [np.deg2rad(a) for a in azimuths]
+    angles = [np.deg2rad(a) for a in angles]
+
+    import matplotlib.pyplot as plt
+    f = plt.figure()
+    a = f.add_subplot(1, 1, 1, projection='3d')
+
+    for az in azimuths:
+        for an in angles:
+            point = spherical_to_cartesian(radius, az, an)
+            # print(az, an, "->", point)
+            a.scatter(*point)
+    
+    a.set_xlim([-1., 1.])
+    a.set_ylim([-1., 1.])
+    a.set_zlim([-1., 1.])
+    a.set_aspect('equal')
+    plt.show()
+
 def main(args):
+    test_spherical_coordinates()
+    return
+
     import matplotlib.pyplot as plt
     # from plot_tools import plot_coordinate_frame
 
@@ -232,7 +281,7 @@ def main(args):
     for i in [10]:
         human = generate_test_human(args.data_dir, i)
         tablet = TabletPlanner.in_front_of_eyes(human)
-        q_soln = tp.ik(tablet)
+        q_soln, _ = tp.ik(tablet)
         print(q_soln)
         return
         

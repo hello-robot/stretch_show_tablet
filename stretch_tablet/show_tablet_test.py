@@ -103,7 +103,7 @@ class ShowTabletNode(Node):
                 if self.human.pose_estimate.is_populated():
                     # update ik
                     tablet_pose = self.planner.in_front_of_eyes(human=self.human)
-                    ik_soln = self.planner.ik(tablet_pose)
+                    ik_soln, _ = self.planner.ik(tablet_pose)
                     # print(ik_soln)
                     msg = String()
                     msg.data = json.dumps(ik_soln)
