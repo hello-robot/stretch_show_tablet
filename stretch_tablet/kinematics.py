@@ -206,6 +206,43 @@ class TabletPlanner:
         return tablet_world
     
     @staticmethod
+    def compute_tablet_rotation_matrix(point, azimuth):
+        Rz = np.array([[np.cos(azimuth), -np.sin(azimuth), 0], [np.sin(azimuth), np.cos(azimuth), 0], [0, 0, 1]])
+
+        x = -1 * np.atleast_2d(point).T
+        y = Rz @ (np.atleast_2d([0, -1, 0]).T)
+        z = np.cross(x.T, y.T).T
+
+        r = np.array([x, y, z]).T
+        r = np.squeeze(r)
+
+        r = sp.to_orthogonal_3d(r)
+
+        return r
+
+    @staticmethod
+    def generate_tablet_view_points(radius=0.5):
+        """
+        generates points in the head frame
+        """
+        # azimuths = [-30., 0., 30.]
+        azimuths = [0., -30.]
+        angles = [90., 112.5, 135.]
+
+        azimuths = [np.deg2rad(a) for a in azimuths]
+        angles = [np.deg2rad(a) for a in angles]
+
+        frames = []
+
+        for az in azimuths:
+            for an in angles:
+                point = np.array(spherical_to_cartesian(radius, az, an))
+                r = TabletPlanner.compute_tablet_rotation_matrix(point, az)
+                frames.append(sp.SE3(r, point))
+        
+        return frames
+    
+    @staticmethod
     def reachable(human: Human):
         pass
 
@@ -248,45 +285,11 @@ def generate_test_human(data_dir, i=6):
     human.pose_estimate.load_camera_pose(camera_path)
     return human
 
-def compute_tablet_rotation_matrix(point, azimuth):
-    Rz = np.array([[np.cos(azimuth), -np.sin(azimuth), 0], [np.sin(azimuth), np.cos(azimuth), 0], [0, 0, 1]])
-
-    x = -1 * np.atleast_2d(point).T
-    y = Rz @ (np.atleast_2d([0, -1, 0]).T)
-    z = np.cross(x.T, y.T).T
-
-    r = np.array([x, y, z]).T
-    r = np.squeeze(r)
-
-    r = sp.to_orthogonal_3d(r)
-
-    return r
-
-def generate_tablet_view_points(radius=0.5):
-    """
-    generates points in the head frame
-    """
-    azimuths = [-30., 0., 30.]
-    angles = [90., 112.5, 135.]
-
-    azimuths = [np.deg2rad(a) for a in azimuths]
-    angles = [np.deg2rad(a) for a in angles]
-
-    frames = []
-
-    for az in azimuths:
-        for an in angles:
-            point = np.array(spherical_to_cartesian(radius, az, an))
-            r = compute_tablet_rotation_matrix(point, az)
-            frames.append(sp.SE3(r, point))
-    
-    return frames
-
 def test_spherical_coordinates():
     f = plt.figure()
     a = f.add_subplot(1, 1, 1, projection='3d')
 
-    frames = generate_tablet_view_points()
+    frames = TabletPlanner.generate_tablet_view_points()
     for frame in frames:
         plot_coordinate_frame(a, frame.translation(), frame.rotationMatrix(), l=0.1)
     

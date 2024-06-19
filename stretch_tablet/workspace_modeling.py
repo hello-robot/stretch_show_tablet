@@ -3,7 +3,13 @@ import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
 
 from kinematics import TabletPlanner, generate_test_human
-from plot_tools import plot_coordinate_frame
+
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.colors import ListedColormap, Normalize
+from plot_tools import plot_coordinate_frame, plot_base_reachability
+
+import json
 
 PI_2 = np.pi / 2.
 
@@ -12,11 +18,12 @@ def is_valid(q):
         return False
     if q["arm_extension"] < 0.01 or q["arm_extension"] > 0.5:
         return False
-    if q["yaw"] < np.deg2rad(-75.) or q["yaw"] > np.pi:
+    # if q["yaw"] < np.deg2rad(-75.) or q["yaw"] > np.pi:
+    if q["yaw"] < -1.75 or q["yaw"] > 4.:
         return False
     if q["pitch"] < -PI_2 or q["pitch"] > np.deg2rad(30.):
         return False
-    if np.abs(q["roll"]) > np.deg2rad(120.):
+    if np.abs(q["roll"]) > np.pi:
         return False
 
     return True
@@ -28,6 +35,85 @@ def get_error(stats_dict: dict):
     pos_error_norm = np.linalg.norm(pos_error)
     ori_error_norm = np.linalg.norm(ori_error)
     return pos_error_norm, ori_error_norm
+
+def characterize_tablet_workspace_multiple(save: bool=False, save_filename="test.json"):
+    # init planner
+    planner = TabletPlanner()
+    human = generate_test_human("/home/lamsey/ament_ws/src/stretch_tablet/data/matt/")
+    targets = planner.generate_tablet_view_points()
+
+    # targets to human head frame
+    human_head_root = human.pose_estimate.body_estimate["nose"]
+    human_head_root_world = human.pose_estimate.get_point_world(human_head_root)
+    human_head_pose = sp.SE3([[0,-1,0], [1,0,0], [0,0,1]], human_head_root_world)
+    targets = [human_head_pose * target for target in targets]
+
+    # init test points
+    n = 5
+    test_base_x = np.linspace(-1.5, 1.5, n)
+    test_base_y = np.linspace(-2.5, 0.5, n)
+
+    # init containers
+    counts = np.zeros([n, n])
+    min_yaw = float('inf')
+    max_yaw = -float('inf')
+
+    for k, target in enumerate(targets):
+        print('target ', k + 1, 'of', len(targets))
+        reachable = []
+        unreachable = []
+
+        for i in range(n):
+            x = test_base_x[i]
+            for j in range(n):
+                y = test_base_y[j]
+                base = sp.SE3(np.eye(3), np.array([x, y, 0]))
+                ik_soln, stats = planner.ik(target, base)
+                # print(ik_soln)
+                
+                pos_error, ori_error = get_error(stats)
+                valid = is_valid(ik_soln) and pos_error < 10e-3 and ori_error < 10e-3
+
+                if valid:
+                    reachable.append([x, y])
+                    min_yaw = min([min_yaw, ik_soln["yaw"]])
+                    max_yaw = max([max_yaw, ik_soln["yaw"]])
+                    counts[i, j] += 1
+                else:
+                    unreachable.append([x, y])
+
+    if save:
+        dump = {
+            "base_x": test_base_x.tolist(),
+            "base_y": test_base_y.tolist(),
+            "counts": counts.tolist()
+        }
+
+        with open(save_filename, 'w') as f:
+            json.dump(dump, f)
+
+    # init plot
+    f = plt.figure()
+    a = f.add_subplot(1, 1, 1, projection='3d')
+
+    plot_base_reachability(a, test_base_x, test_base_y, counts, targets)
+
+    # plot human
+    human_pose = human.pose_estimate.get_body_world().T
+    human_pose = [p for p in human_pose if np.linalg.norm(p[:2]) > 0.1]
+    human_pose = np.array(human_pose).T
+    
+    a.scatter(*human_pose, color='k', s=30, alpha=1, zorder=10)
+    a.scatter(*human.pose_estimate.get_face_world(), color='k', alpha=1, zorder=10)
+    
+    # cfg
+    a.set_xlabel('x (m)')
+    a.set_ylabel('y (m)')
+    a.set_zlabel('z (m)')
+    a.view_init(35, 65)
+    a.set_aspect('equal')
+
+    plt.show()
 
 def characterize_tablet_workspace():
     planner = TabletPlanner()
@@ -107,7 +193,8 @@ def test_ik_checker():
 
 def main():
     # test_ik_checker()
-    characterize_tablet_workspace()
+    # characterize_tablet_workspace()
+    characterize_tablet_workspace_multiple()
 
 if __name__ == '__main__':
     main()
