@@ -7,6 +7,10 @@ from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
 import os
 import json
 
+# testing
+import matplotlib.pyplot as plt
+from plot_tools import plot_coordinate_frame
+
 EPS = 10.e-9
 
 def load_bad_json_data(data_string):
@@ -244,36 +248,62 @@ def generate_test_human(data_dir, i=6):
     human.pose_estimate.load_camera_pose(camera_path)
     return human
 
-def test_spherical_coordinates():
+def compute_tablet_rotation_matrix(point, azimuth):
+    Rz = np.array([[np.cos(azimuth), -np.sin(azimuth), 0], [np.sin(azimuth), np.cos(azimuth), 0], [0, 0, 1]])
+
+    x = -1 * np.atleast_2d(point).T
+    y = Rz @ (np.atleast_2d([0, -1, 0]).T)
+    z = np.cross(x.T, y.T).T
+
+    r = np.array([x, y, z]).T
+    r = np.squeeze(r)
+
+    r = sp.to_orthogonal_3d(r)
+
+    return r
+
+def generate_tablet_view_points(radius=0.5):
+    """
+    generates points in the head frame
+    """
     azimuths = [-30., 0., 30.]
     angles = [90., 112.5, 135.]
-    radius = 1.
 
     azimuths = [np.deg2rad(a) for a in azimuths]
     angles = [np.deg2rad(a) for a in angles]
 
-    import matplotlib.pyplot as plt
-    f = plt.figure()
-    a = f.add_subplot(1, 1, 1, projection='3d')
+    frames = []
 
     for az in azimuths:
         for an in angles:
-            point = spherical_to_cartesian(radius, az, an)
-            # print(az, an, "->", point)
-            a.scatter(*point)
+            point = np.array(spherical_to_cartesian(radius, az, an))
+            r = compute_tablet_rotation_matrix(point, az)
+            frames.append(sp.SE3(r, point))
     
+    return frames
+
+def test_spherical_coordinates():
+    f = plt.figure()
+    a = f.add_subplot(1, 1, 1, projection='3d')
+
+    frames = generate_tablet_view_points()
+    for frame in frames:
+        plot_coordinate_frame(a, frame.translation(), frame.rotationMatrix(), l=0.1)
+    
+    plot_coordinate_frame(a, [0,0,0], np.eye(3), l=0.25)
+
     a.set_xlim([-1., 1.])
     a.set_ylim([-1., 1.])
     a.set_zlim([-1., 1.])
+    a.set_xlabel('x (m)')
+    a.set_ylabel('y (m)')
+    a.set_zlabel('z (m)')
     a.set_aspect('equal')
     plt.show()
 
 def main(args):
     test_spherical_coordinates()
     return
-
-    import matplotlib.pyplot as plt
-    # from plot_tools import plot_coordinate_frame
 
     tp = TabletPlanner()
 
