@@ -1,18 +1,26 @@
 import numpy as np
 import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
+
+from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
+
+import os
 import json
 
 EPS = 10.e-9
 
+def load_bad_json_data(data_string):
+    data_string = data_string.replace("'", "\"")
+    data_string = data_string.replace("(", "[")
+    data_string = data_string.replace(")", "]")
+
+    data = json.loads(data_string)
+    return data
+
 def load_bad_json(file):
     with open(file) as f:
         data_string = json.load(f)
-        data_string = data_string.replace("'", "\"")
-        data_string = data_string.replace("(", "[")
-        data_string = data_string.replace(")", "]")
-        data = json.loads(data_string)
-    return data
+        return load_bad_json_data(data_string)
 
 landmark_names = ['nose', 'neck',
                 'right_shoulder', 'right_elbow', 'right_wrist',
@@ -21,6 +29,24 @@ landmark_names = ['nose', 'neck',
                 'left_hip', 'left_knee', 'left_ankle',
                 'right_eye', 'left_eye',
                 'right_ear', 'left_ear']
+
+def spherical_to_cartesian(radius, azimuth, elevation):
+    """
+    Convert spherical coordinates to Cartesian coordinates.
+    
+    Args:
+        radius (float): The radius or radial distance.
+        azimuth (float): The azimuth angle in radians.
+        elevation (float): The elevation angle in radians.
+    
+    Returns:
+        list: A list containing the Cartesian coordinates (x, y, z).
+    """
+    x = radius * np.sin(elevation) * np.cos(azimuth)
+    y = radius * np.sin(elevation) * np.sin(azimuth)
+    z = radius * np.cos(elevation)
+    
+    return [x, y, z]
 
 class HumanKinematics:
     def __init__(self):
@@ -43,13 +69,15 @@ class HumanPoseEstimate:
 
     def load_face_estimate(self, file):
         data = load_bad_json(file)
+        self.set_face_estimate(data)
+
+    def set_face_estimate(self, data):
         self.face_estimate = data
         self.face_points = np.array([v for v in data.values()]).T
 
     def load_body_estimate(self, file):
         data = load_bad_json(file)
-        self.body_estimate = data
-        self.body_points = np.array([v for v in data.values()]).T
+        self.set_body_estimate(data)
 
         not_visible = landmark_names.copy()
         for key, value in data.items():
@@ -57,6 +85,10 @@ class HumanPoseEstimate:
                 not_visible.remove(key)
 
         print("Cannot see: " + str(not_visible))
+
+    def set_body_estimate(self, data):
+        self.body_estimate = data
+        self.body_points = np.array([v for v in data.values()]).T
 
     def load_camera_pose(self, camera_file):
         with open(camera_file) as f:
@@ -67,8 +99,22 @@ class HumanPoseEstimate:
 
         rotation_matrix = R.from_quat(quaternion).as_matrix()
 
-        self.world2camera_pose = sp.SE3(rotation_matrix, position.T)
-        self.world2camera_pose = self.world2camera_pose.inverse()
+        # NOTE: this is backwards bc test code is wrong
+        camera2world_pose = sp.SE3(rotation_matrix, position.T)
+        self.set_camera_pose(camera2world_pose.inverse())
+
+    def set_camera_pose(self, world2camera_pose: sp.SE3):
+        self.world2camera_pose = world2camera_pose
+
+    def clear_estimates(self):
+        self.body_estimate = None
+        self.body_points = None
+        self.face_estimate = None
+        self.face_points = None
+
+    def is_populated(self):
+        return True if self.body_estimate is not None and self.body_points is not None \
+            and self.face_estimate is not None and self.face_points is not None else False
 
     def get_point_world(self, point):
         point = np.array(point).T
@@ -111,10 +157,28 @@ class Human:
 
 class TabletPlanner:
     def __init__(self):
-        pass
+        self.controlled_joints = [
+            # "x_prismatic_joint",
+            "z_revolute_joint",
+            "joint_lift",
+            "joint_arm_l0",
+            "joint_arm_l1",
+            "joint_arm_l2",
+            "joint_arm_l3",
+            "joint_wrist_yaw",
+            "joint_wrist_pitch",
+            "joint_wrist_roll"
+        ]
+        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_re3_revolute.urdf")
+        self.ik_solver = PinocchioIKSolver(
+            urdf_path=urdf_path,
+            ee_link_name="link_grasp_center",
+            # ee_link_name="link_gripper_s3_body",
+            controlled_joints=self.controlled_joints
+        )
 
     @staticmethod
-    def in_front_of_eyes(human: Human):
+    def in_front_of_eyes(human: Human) -> sp.SE3:
         """
         Relative to eyes / forehead
         Returns in world frame
@@ -141,6 +205,34 @@ class TabletPlanner:
     def reachable(human: Human):
         pass
 
+    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3()):
+        # TODO: use world_base_link to transform the target into base link frame
+        target_base_frame = world_base_link.inverse() * world_target
+        pos_desired = target_base_frame.translation()
+        quat_desired = R.from_matrix(target_base_frame.rotationMatrix()).as_quat()
+        q_soln, success, stats = self.ik_solver.compute_ik(
+            pos_desired=pos_desired,
+            quat_desired=quat_desired,
+        )
+
+        base_drive = q_soln[0]
+        lift = q_soln[1]
+        arm_ext = sum(q_soln[2:5])
+        yaw = q_soln[6]
+        pitch = q_soln[7]
+        roll = q_soln[8]
+        
+        result = {
+            "base": base_drive,
+            "lift": lift,
+            "arm_extension": arm_ext,
+            "yaw": yaw,
+            "pitch": pitch,
+            "roll": roll,
+        }
+
+        return result, stats
+
 def generate_test_human(data_dir, i=6):
     body_path = data_dir + "body_" + str(i) + ".json"
     face_path = data_dir + "face_" + str(i) + ".json"
@@ -152,14 +244,46 @@ def generate_test_human(data_dir, i=6):
     human.pose_estimate.load_camera_pose(camera_path)
     return human
 
-def main(args):
+def test_spherical_coordinates():
+    azimuths = [-30., 0., 30.]
+    angles = [90., 112.5, 135.]
+    radius = 1.
+
+    azimuths = [np.deg2rad(a) for a in azimuths]
+    angles = [np.deg2rad(a) for a in angles]
+
     import matplotlib.pyplot as plt
-    from plot_tools import plot_coordinate_frame
+    f = plt.figure()
+    a = f.add_subplot(1, 1, 1, projection='3d')
+
+    for az in azimuths:
+        for an in angles:
+            point = spherical_to_cartesian(radius, az, an)
+            # print(az, an, "->", point)
+            a.scatter(*point)
+    
+    a.set_xlim([-1., 1.])
+    a.set_ylim([-1., 1.])
+    a.set_zlim([-1., 1.])
+    a.set_aspect('equal')
+    plt.show()
+
+def main(args):
+    test_spherical_coordinates()
+    return
+
+    import matplotlib.pyplot as plt
+    # from plot_tools import plot_coordinate_frame
+
+    tp = TabletPlanner()
 
     # for i in range(20):
     for i in [10]:
         human = generate_test_human(args.data_dir, i)
         tablet = TabletPlanner.in_front_of_eyes(human)
+        q_soln, _ = tp.ik(tablet)
+        print(q_soln)
+        return
         
         f = plt.figure()
         a = f.add_subplot(1, 1, 1, projection='3d')

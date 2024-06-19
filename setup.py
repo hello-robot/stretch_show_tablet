@@ -28,6 +28,8 @@ setup(
             # 'detect_nearest_mouth = stretch_tablet.detect_nearest_mouth:main',
             'detect_body_landmarks = stretch_tablet.detect_body_landmarks:main',
             'record_test_data = stretch_tablet.record_test_data:main',
+            'show_tablet_test = stretch_tablet.show_tablet_test:main',
+            'stretch_main = stretch_tablet.stretch_main:main'
         ],
     },
 )
