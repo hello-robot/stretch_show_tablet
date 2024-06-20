@@ -221,12 +221,17 @@ class TabletPlanner:
         return r
 
     @staticmethod
-    def generate_tablet_view_points(radius=0.5):
+    def generate_tablet_view_points(radius=0.5, n=9):
         """
         generates points in the head frame
         """
-        # azimuths = [-30., 0., 30.]
-        azimuths = [0., -30.]
+        if n == 9:
+            azimuths = [-30., 0., 30.]
+        elif n == 6:
+            azimuths = [0., -30.]
+        else:
+            raise ValueError
+        
         angles = [90., 112.5, 135.]
 
         azimuths = [np.deg2rad(a) for a in azimuths]
