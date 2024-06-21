@@ -162,8 +162,8 @@ class Human:
 class TabletPlanner:
     def __init__(self):
         self.controlled_joints = [
-            # "x_prismatic_joint",
-            "z_revolute_joint",
+            "x_prismatic_joint",
+            # "z_revolute_joint",
             "joint_lift",
             "joint_arm_l0",
             "joint_arm_l1",
@@ -173,7 +173,8 @@ class TabletPlanner:
             "joint_wrist_pitch",
             "joint_wrist_roll"
         ]
-        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_re3_revolute.urdf")
+        # urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_re3_revolute.urdf")
+        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_re3_cartesian.urdf")
         self.ik_solver = PinocchioIKSolver(
             urdf_path=urdf_path,
             ee_link_name="link_grasp_center",
@@ -182,7 +183,8 @@ class TabletPlanner:
         )
 
         self.lower_joint_limits = {
-            "base": -100000.,  # no limit
+            # "base": -3.14,  # rotation
+            "base": -5.,  # translation
             "lift": 0.,
             "arm_extension": 0.,
             "yaw": -1.75,
@@ -191,7 +193,8 @@ class TabletPlanner:
         }
 
         self.upper_joint_limits = {
-            "base": 100000.,  # no limit
+            # "base": 3.14,  # rotation
+            "base": 5.,  # translation
             "lift": 1.1,
             "arm_extension": 0.13 * 4,
             "yaw": 4.,
@@ -200,7 +203,7 @@ class TabletPlanner:
         }
 
         self.joint_cost_weights = {
-            "base": 0.,
+            "base": 10.,
             "lift": 0.1,
             "arm_extension": 100.,
             "yaw": 10.,
@@ -301,14 +304,31 @@ class TabletPlanner:
         pass
 
     def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3(), debug: bool=False):
-        # TODO: use world_base_link to transform the target into base link frame
+        # transform target in world frame to base frame
         target_base_frame = world_base_link.inverse() * world_target
+
+        # compute IK
         pos_desired = target_base_frame.translation()
         quat_desired = R.from_matrix(target_base_frame.rotationMatrix()).as_quat()
         q_soln, success, stats = self.ik_solver.compute_ik(
             pos_desired=pos_desired,
             quat_desired=quat_desired,
         )
+
+        if debug:
+            fk = self.ik_solver.compute_fk(q_soln)
+            err = np.concatenate([pos_desired, quat_desired]) - np.concatenate([fk[0], fk[1]])
+            print("error:", [f"{e:.4f}" for e in err])
+            print(stats)
+    # def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3(), debug: bool=False):
+    #     # TODO: use world_base_link to transform the target into base link frame
+    #     target_base_frame = world_base_link.inverse() * world_target
+    #     pos_desired = target_base_frame.translation()
+    #     quat_desired = R.from_matrix(target_base_frame.rotationMatrix()).as_quat()
+    #     q_soln, success, stats = self.ik_solver.compute_ik(
+    #         pos_desired=pos_desired,
+    #         quat_desired=quat_desired,
+    #     )
 
         base_drive = q_soln[0]
         lift = q_soln[1]
@@ -326,24 +346,24 @@ class TabletPlanner:
             "roll": roll,
         }
 
-        if debug:
-            fk = self.ik_solver.compute_fk(q_soln)
-            print(pos_desired, quat_desired)
-            print(fk)
-            print('error')
-            err = np.concatenate([pos_desired, quat_desired]) - np.concatenate([fk[0], fk[1]])
-            print([f"{e:.2f}" for e in err])
-            # world_pos = world_target.translation()
-            # fk_soln = self.ik_solver.compute_fk(q_soln)
-            # fk_pos = fk_soln[0]
-            # print("world_target", world_pos)
-            # print("world_base", world_base_link.translation())
-            # print("target_base", target_base_frame.translation())
-            # print("fk", fk_pos)
-            # fk_se3 = sp.SE3(R.from_quat(fk_soln[1]).as_matrix(), fk_pos)
-            # fk_world = world_base_link * fk_se3
-            # print("fk with base", fk_world.translation())
-            # print('result', json.dumps(result, indent=2))
+    #     if debug:
+    #         fk = self.ik_solver.compute_fk(q_soln)
+    #         print(pos_desired, quat_desired)
+    #         print(fk)
+    #         print('error')
+    #         err = np.concatenate([pos_desired, quat_desired]) - np.concatenate([fk[0], fk[1]])
+    #         print([f"{e:.4f}" for e in err])
+    #         # world_pos = world_target.translation()
+    #         # fk_soln = self.ik_solver.compute_fk(q_soln)
+    #         # fk_pos = fk_soln[0]
+    #         # print("world_target", world_pos)
+    #         # print("world_base", world_base_link.translation())
+    #         # print("target_base", target_base_frame.translation())
+    #         # print("fk", fk_pos)
+    #         # fk_se3 = sp.SE3(R.from_quat(fk_soln[1]).as_matrix(), fk_pos)
+    #         # fk_world = world_base_link * fk_se3
+    #         # print("fk with base", fk_world.translation())
+    #         # print('result', json.dumps(result, indent=2))
 
         return result, stats
 

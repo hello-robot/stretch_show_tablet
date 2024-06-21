@@ -221,8 +221,9 @@ def characterize_tablet_workspace_cost():
                         min_cost = cost
                         best_soln = ik_soln
                     
-                    ik_soln, stats = planner.ik(target, base, debug=True)
-                    input()
+                    # testing = re run IK in debug mode
+                    # planner.ik(target, base, debug=True)
+                    # input()
 
                 else:
                     costs[i, j] = float('inf')

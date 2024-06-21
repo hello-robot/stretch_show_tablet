@@ -7,7 +7,7 @@
       <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
     </inertial>
   </link>
-  <link name="z_virtual_link">
+  <link name="x_virtual_link">
     <inertial>
       <origin xyz="0.0 0.0 0.0" rpy="0.0 -0.0 0.0"/>
       <mass value="1.0"/>
@@ -362,16 +362,16 @@
     </inertial>
   </link>
   <joint name="virtual_base_joint" type="fixed">
-    <parent link="z_virtual_link"/>
+    <parent link="x_virtual_link"/>
     <child link="base_link"/>
     <axis xyz="1. 0. 0."/>
     <origin xyz="0.0 0.0 0.0" rpy="0.0 -0.0 0.0"/>
   </joint>
-  <joint name="z_revolute_joint" type="continuous">
-    <limit effort="1000.0" velocity="10.0" lower="-3.14" upper="3.14"/>
+  <joint name="x_prismatic_joint" type="prismatic">
+    <limit effort="10.0" velocity="1.0" lower="-100.0" upper="100.0"/>
     <parent link="virtual_base_link"/>
-    <child link="z_virtual_link"/>
-    <axis xyz="0. 0. 1."/>
+    <child link="x_virtual_link"/>
+    <axis xyz="1. 0. 0."/>
     <origin xyz="0.0 0.0 0.0" rpy="0.0 -0.0 0.0"/>
   </joint>
   <joint name="joint_mast" type="fixed">
