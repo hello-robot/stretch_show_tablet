@@ -21,6 +21,19 @@ def plot_coordinate_frame(a, p, R, l):
     a.plot(*y, color='g')
     a.plot(*z, color='b')
 
+def plot_coordinate_frame_2d(a, p, R, l):
+    x0 = y0 = p[:3]
+    x_axis = R[:3, 0] / np.linalg.norm(R[:3, 0])
+    y_axis = R[:3, 1] / np.linalg.norm(R[:3, 1])
+    x1 = x0 + x_axis * l
+    y1 = y0 + y_axis * l
+
+    x = np.vstack([x0, x1]).T
+    y = np.vstack([y0, y1]).T
+
+    a.plot(*x, color='r')
+    a.plot(*y, color='g')
+
 def points2np(points: list):
     points_np = np.zeros([3, len(points)])
     for i in range(len(points)):

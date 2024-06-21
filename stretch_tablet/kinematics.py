@@ -181,6 +181,33 @@ class TabletPlanner:
             controlled_joints=self.controlled_joints
         )
 
+        self.lower_joint_limits = {
+            "base": -100000.,  # no limit
+            "lift": 0.,
+            "arm_extension": 0.,
+            "yaw": -1.75,
+            "pitch": -1.57,
+            "roll": -3.14,
+        }
+
+        self.upper_joint_limits = {
+            "base": 100000.,  # no limit
+            "lift": 1.1,
+            "arm_extension": 0.13 * 4,
+            "yaw": 4.,
+            "pitch": 0.56,
+            "roll": 3.14,
+        }
+
+        self.joint_cost_weights = {
+            "base": 0.,
+            "lift": 0.1,
+            "arm_extension": 100.,
+            "yaw": 10.,
+            "pitch": 0.1,
+            "roll": 0.1,
+        }
+
     @staticmethod
     def in_front_of_eyes(human: Human) -> sp.SE3:
         """
@@ -247,11 +274,33 @@ class TabletPlanner:
         
         return frames
     
+    def cost_midpoint_displacement(self, q):
+        # see (3.57) in Siciliano - midpoint distance cost
+        cost = 0.
+        n = len(q.keys())
+        for key, value in q.items():
+            # compute term
+            lo = self.lower_joint_limits[key]
+            hi = self.upper_joint_limits[key]
+            mid = (hi + lo) / 2.
+
+            numerator = value - mid
+            denominator = hi - lo
+            term = (numerator / denominator) ** 2.
+
+            # add weight
+            weight = self.joint_cost_weights[key]
+            
+            cost += weight * term
+
+        cost = (1. / (2. * n)) * cost
+        return cost
+
     @staticmethod
     def reachable(human: Human):
         pass
 
-    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3()):
+    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3(), debug: bool=False):
         # TODO: use world_base_link to transform the target into base link frame
         target_base_frame = world_base_link.inverse() * world_target
         pos_desired = target_base_frame.translation()
@@ -276,6 +325,25 @@ class TabletPlanner:
             "pitch": pitch,
             "roll": roll,
         }
+
+        if debug:
+            fk = self.ik_solver.compute_fk(q_soln)
+            print(pos_desired, quat_desired)
+            print(fk)
+            print('error')
+            err = np.concatenate([pos_desired, quat_desired]) - np.concatenate([fk[0], fk[1]])
+            print([f"{e:.2f}" for e in err])
+            # world_pos = world_target.translation()
+            # fk_soln = self.ik_solver.compute_fk(q_soln)
+            # fk_pos = fk_soln[0]
+            # print("world_target", world_pos)
+            # print("world_base", world_base_link.translation())
+            # print("target_base", target_base_frame.translation())
+            # print("fk", fk_pos)
+            # fk_se3 = sp.SE3(R.from_quat(fk_soln[1]).as_matrix(), fk_pos)
+            # fk_world = world_base_link * fk_se3
+            # print("fk with base", fk_world.translation())
+            # print('result', json.dumps(result, indent=2))
 
         return result, stats
 
@@ -309,8 +377,13 @@ def test_spherical_coordinates():
     a.set_aspect('equal')
     plt.show()
 
+def test_cost_function():
+    planner = TabletPlanner()
+    planner.cost_midpoint_displacement(None)
+
 def main(args):
-    test_spherical_coordinates()
+    # test_spherical_coordinates()
+    test_cost_function()
     return
 
     tp = TabletPlanner()

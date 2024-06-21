@@ -7,7 +7,7 @@ from kinematics import TabletPlanner, generate_test_human
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.colors import ListedColormap, Normalize
-from plot_tools import plot_coordinate_frame, plot_base_reachability
+from plot_tools import plot_coordinate_frame, plot_coordinate_frame_2d, plot_base_reachability
 
 import json
 
@@ -177,6 +177,98 @@ def characterize_tablet_workspace():
 
     plt.show()
 
+def characterize_tablet_workspace_cost():
+    # init planner
+    planner = TabletPlanner()
+    human = generate_test_human("/home/lamsey/ament_ws/src/stretch_tablet/data/matt/")
+    targets = planner.generate_tablet_view_points()
+
+    # targets to human head frame
+    human_head_root = human.pose_estimate.body_estimate["nose"]
+    human_head_root_world = human.pose_estimate.get_point_world(human_head_root)
+    human_head_pose = sp.SE3([[0,-1,0], [1,0,0], [0,0,1]], human_head_root_world)
+    # human_head_pose = sp.SE3(np.eye(3), human_head_root_world)
+    targets = [human_head_pose * target for target in targets]
+
+    # init test points
+    n = 50
+    test_base_x = np.linspace(-1.5, 1.5, n)
+    test_base_y = np.linspace(-2.5, 0.5, n)
+    plot_x, plot_y = np.meshgrid(test_base_x, test_base_y)
+
+    # init containers
+    costs = np.ones([n, n])
+    min_cost = float('inf')
+    best_soln = {}
+
+    for k, target in enumerate(targets):
+        print('target ', k + 1, 'of', len(targets))
+
+        for i in range(n):
+            x = test_base_x[i]
+            for j in range(n):
+                y = test_base_y[j]
+                base = sp.SE3(np.eye(3), np.array([x, y, 0]))
+                ik_soln, stats = planner.ik(target, base)
+                # print(ik_soln)
+                
+                pos_error, ori_error = get_error(stats)
+                valid = is_valid(ik_soln) and pos_error < 10e-3 and ori_error < 10e-3
+                if valid:
+                    cost = planner.cost_midpoint_displacement(ik_soln)
+                    costs[i, j] = cost
+                    if cost < min_cost:
+                        min_cost = cost
+                        best_soln = ik_soln
+                    
+                    ik_soln, stats = planner.ik(target, base, debug=True)
+                    input()
+
+                else:
+                    costs[i, j] = float('inf')
+        
+        # get lowest cost
+        # costs[costs.isna] = float('inf')
+        min_cost = np.min(costs)
+        # print(min_cost)
+        min_cost_ij = np.unravel_index(np.argmin(costs, axis=None), costs.shape)
+        # print(min_cost_ij)
+        min_cost_x = plot_x[min_cost_ij]
+        min_cost_y = plot_y[min_cost_ij]
+        print(min_cost_x, min_cost_y, ":", min_cost)
+        print(json.dumps(best_soln, indent=2))
+        # return
+
+        f = plt.figure()
+        a = f.add_subplot()
+        a.set_title(str(target.translation()))
+        a.scatter(plot_x, plot_y, c=costs)
+        a.scatter(min_cost_x, min_cost_y, s=60, c='r', marker='x')
+        plot_coordinate_frame_2d(a, target.translation(), target.rotationMatrix(), l=0.2)
+
+        # human
+        human_pose = human.pose_estimate.get_body_world().T
+        human_pose = [p for p in human_pose if np.linalg.norm(p[:2]) > 0.1]
+        human_pose = np.array(human_pose).T
+        
+        a.scatter(*human_pose[:2, :], color='k')
+
+        norm = Normalize(vmin=0, vmax=np.max(costs))
+        sm = cm.ScalarMappable(cmap=cm.get_cmap('jet'), norm=norm)
+        sm.set_array([])
+        plt.colorbar(sm, ax=a)
+
+        a.set_xlim(min(test_base_x), max(test_base_x))
+        a.set_ylim(min(test_base_y), max(test_base_y))
+        a.set_xlabel('x (m)')
+        a.set_ylabel('y (m)')
+        a.set_aspect('equal')
+        a.set_axisbelow(True)
+        plt.grid()
+
+        # f.savefig(str(k+1)+".png")
+        plt.show()
+
 def test_ik_checker():
     planner = TabletPlanner()
 
@@ -194,7 +286,8 @@ def test_ik_checker():
 def main():
     # test_ik_checker()
     # characterize_tablet_workspace()
-    characterize_tablet_workspace_multiple()
+    # characterize_tablet_workspace_multiple()
+    characterize_tablet_workspace_cost()
 
 if __name__ == '__main__':
     main()
