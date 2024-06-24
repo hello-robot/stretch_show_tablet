@@ -40,7 +40,7 @@ def characterize_tablet_workspace_multiple(save: bool=False, save_filename="test
     # init planner
     planner = TabletPlanner()
     human = generate_test_human("/home/lamsey/ament_ws/src/stretch_tablet/data/matt/")
-    targets = planner.generate_tablet_view_points()
+    targets = planner.generate_tablet_view_points(n=9)
 
     # targets to human head frame
     human_head_root = human.pose_estimate.body_estimate["nose"]
@@ -49,7 +49,7 @@ def characterize_tablet_workspace_multiple(save: bool=False, save_filename="test
     targets = [human_head_pose * target for target in targets]
 
     # init test points
-    n = 5
+    n = 50
     test_base_x = np.linspace(-1.5, 1.5, n)
     test_base_y = np.linspace(-2.5, 0.5, n)
 
@@ -183,34 +183,40 @@ def characterize_tablet_workspace_cost():
     human = generate_test_human("/home/lamsey/ament_ws/src/stretch_tablet/data/matt/")
     targets = planner.generate_tablet_view_points()
 
-    # targets to human head frame
+    # transform targets to human head frame
     human_head_root = human.pose_estimate.body_estimate["nose"]
     human_head_root_world = human.pose_estimate.get_point_world(human_head_root)
+    # TODO: query head orientation using planner
     human_head_pose = sp.SE3([[0,-1,0], [1,0,0], [0,0,1]], human_head_root_world)
-    # human_head_pose = sp.SE3(np.eye(3), human_head_root_world)
     targets = [human_head_pose * target for target in targets]
 
     # init test points
-    n = 50
-    test_base_x = np.linspace(-1.5, 1.5, n)
-    test_base_y = np.linspace(-2.5, 0.5, n)
-    plot_x, plot_y = np.meshgrid(test_base_x, test_base_y)
+    n_x = 50
+    n_y = 50
+    test_base_x = np.linspace(-1.5, 1.5, n_x)
+    test_base_y = np.linspace(-2.5, 0.5, n_y)
+    plot_x, plot_y = np.meshgrid(test_base_x, test_base_y, indexing='ij')
+    plot_x = plot_x.flatten()
+    plot_y = plot_y.flatten()
 
-    # init containers
-    costs = np.ones([n, n])
-    min_cost = float('inf')
-    best_soln = {}
+    base_orientation = np.eye(3)
 
     for k, target in enumerate(targets):
         print('target ', k + 1, 'of', len(targets))
 
-        for i in range(n):
+        # init containers
+        costs = np.ones([n_x, n_y])
+        min_cost = float('inf')
+        min_cost_x = 0.
+        min_cost_y = 0.
+        best_soln = {}
+
+        for i in range(n_x):
             x = test_base_x[i]
-            for j in range(n):
+            for j in range(n_y):
                 y = test_base_y[j]
-                base = sp.SE3(np.eye(3), np.array([x, y, 0]))
+                base = sp.SE3(base_orientation, np.array([x, y, 0]))
                 ik_soln, stats = planner.ik(target, base)
-                # print(ik_soln)
                 
                 pos_error, ori_error = get_error(stats)
                 valid = is_valid(ik_soln) and pos_error < 10e-3 and ori_error < 10e-3
@@ -219,6 +225,8 @@ def characterize_tablet_workspace_cost():
                     costs[i, j] = cost
                     if cost < min_cost:
                         min_cost = cost
+                        min_cost_x = x
+                        min_cost_y = y
                         best_soln = ik_soln
                     
                     # testing = re run IK in debug mode
@@ -228,32 +236,30 @@ def characterize_tablet_workspace_cost():
                 else:
                     costs[i, j] = float('inf')
         
-        # get lowest cost
-        # costs[costs.isna] = float('inf')
-        min_cost = np.min(costs)
-        # print(min_cost)
-        min_cost_ij = np.unravel_index(np.argmin(costs, axis=None), costs.shape)
-        # print(min_cost_ij)
-        min_cost_x = plot_x[min_cost_ij]
-        min_cost_y = plot_y[min_cost_ij]
-        print(min_cost_x, min_cost_y, ":", min_cost)
-        print(json.dumps(best_soln, indent=2))
-        # return
-
+        # plot cost map and optimal solution
         f = plt.figure()
         a = f.add_subplot()
         a.set_title(str(target.translation()))
-        a.scatter(plot_x, plot_y, c=costs)
+        a.scatter(plot_x, plot_y, c=costs.flatten())
         a.scatter(min_cost_x, min_cost_y, s=60, c='r', marker='x')
         plot_coordinate_frame_2d(a, target.translation(), target.rotationMatrix(), l=0.2)
 
-        # human
+        # plot ik soln
+        fk_soln = planner.fk([v for v in best_soln.values()])
+        best_base_frame = sp.SE3(base_orientation, [min_cost_x, min_cost_y, 0.])
+        ee_frame = best_base_frame * fk_soln
+        ee_translation = ee_frame.translation()
+        ee_xy = ee_translation[:2]
+        a.plot([min_cost_x, ee_xy[0]], [min_cost_y, ee_xy[1]], 'r')
+
+        # plot human keypoints
         human_pose = human.pose_estimate.get_body_world().T
         human_pose = [p for p in human_pose if np.linalg.norm(p[:2]) > 0.1]
         human_pose = np.array(human_pose).T
         
         a.scatter(*human_pose[:2, :], color='k')
 
+        # set up colorbar visualization
         norm = Normalize(vmin=0, vmax=np.max(costs))
         sm = cm.ScalarMappable(cmap=cm.get_cmap('jet'), norm=norm)
         sm.set_array([])
@@ -267,8 +273,8 @@ def characterize_tablet_workspace_cost():
         a.set_axisbelow(True)
         plt.grid()
 
-        # f.savefig(str(k+1)+".png")
-        plt.show()
+        f.savefig(str(k+1)+".png")
+        # plt.show()
 
 def test_ik_checker():
     planner = TabletPlanner()

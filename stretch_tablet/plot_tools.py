@@ -54,6 +54,10 @@ def plot_base_reachability(a, base_x, base_y, counts, targets):
     custom_brg = ListedColormap(custom_brg, N=len(targets))
 
     # plot floor
+    plot_x = plot_x.flatten()
+    plot_y = plot_y.flatten()
+    plot_z = plot_z.flatten()
+    counts = counts.flatten()
     a.scatter(plot_x, plot_y, plot_z, c=counts, cmap=custom_brg, edgecolors='none', alpha=0.75, zorder=-1)
 
     # colorbar
