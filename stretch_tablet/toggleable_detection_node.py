@@ -12,6 +12,11 @@ from visualization_msgs.msg import MarkerArray
 from stretch_deep_perception import detection_2d_to_3d as d2
 
 import json
+from enum import Enum
+
+class Camera(Enum):
+    HEAD = 1
+    GRIPPER = 2
 
 class ToggleableDetectionNode(DetectionNode):
     def __init__(self, detector, default_marker_name, node_name,
@@ -113,19 +118,30 @@ class ToggleableDetectionNode(DetectionNode):
         if axes_array is not None: 
             self.visualize_axes_pub.publish(axes_array)
 
-    def main(self):
+    def main(self, camera: Camera = Camera.HEAD):
         rclpy.init()
         self.node = rclpy.create_node(self.node_name)
         name = self.node.get_name()
         self.node.get_logger().info("{0} started".format(name))
+
+        if camera == Camera.HEAD:
+            topic_prefix = '/camera/'
+            rgb_topic = topic_prefix + 'color/image_raw'
+            depth_topic = topic_prefix + 'aligned_depth_to_color/image_raw'
+        elif camera == Camera.GRIPPER:
+            topic_prefix = '/gripper_camera/'
+            rgb_topic = topic_prefix + 'color/image_rect_raw'
+            depth_topic = topic_prefix + 'aligned_depth_to_color/image_raw'
+        else:
+            raise ValueError
         
-        self.rgb_topic_name = '/camera/color/image_raw' #'/camera/infra1/image_rect_raw'
+        self.rgb_topic_name = rgb_topic
         self.rgb_image_subscriber = message_filters.Subscriber(self.node, Image, self.rgb_topic_name)
 
-        self.depth_topic_name = '/camera/aligned_depth_to_color/image_raw'
+        self.depth_topic_name = depth_topic
         self.depth_image_subscriber = message_filters.Subscriber(self.node, Image, self.depth_topic_name)
 
-        self.camera_info_subscriber = message_filters.Subscriber(self.node, CameraInfo, '/camera/color/camera_info')
+        self.camera_info_subscriber = message_filters.Subscriber(self.node, CameraInfo, topic_prefix + 'color/camera_info')
 
         self.synchronizer = message_filters.TimeSynchronizer([self.rgb_image_subscriber, self.depth_image_subscriber, self.camera_info_subscriber], 10)
         self.synchronizer.registerCallback(self.image_callback)

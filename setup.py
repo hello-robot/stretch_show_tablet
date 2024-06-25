@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             # 'detect_objects = stretch_tablet.detect_objects:main',
             'detect_faces = stretch_tablet.detect_faces:main',
+            'detect_faces_gripper = stretch_tablet.detect_faces_gripper:main',
             # 'detect_nearest_mouth = stretch_tablet.detect_nearest_mouth:main',
             'detect_body_landmarks = stretch_tablet.detect_body_landmarks:main',
             'record_test_data = stretch_tablet.record_test_data:main',
