@@ -15,6 +15,12 @@ def generate_launch_description():
         launch_arguments={'mode': 'position', 'broadcast_odom_tf': 'True', 'fail_out_of_range_goal': 'False'}.items(),
     )
 
+    stretch_main = Node(
+        package='stretch_tablet',
+        executable='stretch_main',
+        output='screen',
+    )
+
     d405_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([str(stretch_core_path), '/launch/d405_basic.launch.py'])
     )
@@ -22,6 +28,12 @@ def generate_launch_description():
     detect_faces = Node(
         package='stretch_tablet',
         executable='detect_faces_gripper',
+        output='screen',
+        )
+    
+    track_head = Node(
+        package='stretch_tablet',
+        executable='track_head',
         output='screen',
         )
 
@@ -36,7 +48,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         stretch_driver,
+        stretch_main,
         d405_launch,
         detect_faces,
+        track_head,
         # rviz_node,  # uncomment if not running headless
         ])

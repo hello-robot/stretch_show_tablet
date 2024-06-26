@@ -26,12 +26,36 @@ class StretchMain(HelloNode):
         # sub
         self.create_subscription(
             String,
-            "/stretch_tablet/goal",
-            callback=self.move_to_goal,
+            "/stretch_tablet/move_by",
+            callback=self.move_by,
             qos_profile=1
         )
 
         rclpy.spin(self)
+
+    # callbacks
+    def move_by(self, msg):
+        # self.get_logger().info(str(msg.data))
+        data = json.loads(msg.data)
+        delta = data["joint_wrist_yaw"]
+        self.get_logger().info(str(delta))
+        if abs(delta) < 0.001:
+            return
+        
+        max_delta = 0.1
+        if abs(delta) > max_delta:
+            delta = np.sign(delta) * max_delta
+
+        self.get_logger().info(str('hi'))
+        # self.move
+        current_state = self.joint_state
+        names = current_state.name
+        positions = current_state.position
+        # self.get_logger().info(current_pose)
+        current_yaw_position = positions[names.index('joint_wrist_yaw')]
+        cmd_yaw_position = current_yaw_position + delta
+
+        self.move_to_pose({"joint_wrist_yaw": cmd_yaw_position}, blocking=False)
 
     def move_to_goal(self, msg):
         # msg_data = msg.data.replace("\"", "")
