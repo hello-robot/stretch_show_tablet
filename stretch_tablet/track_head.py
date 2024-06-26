@@ -3,7 +3,9 @@ from rclpy.node import Node
 
 from std_msgs.msg import String
 
-from .kinematics import load_bad_json_data, TabletController, Human
+from human import Human
+from utils import load_bad_json_data
+from control import TabletController
 import json
 
 def in_range(value, range):

@@ -2,11 +2,12 @@ import json
 import numpy as np
 import sophuspy as sp
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, PathPatch
+from matplotlib.patches import Circle
 import mpl_toolkits.mplot3d.art3d as art3d
 
 from plot_tools import plot_base_reachability
-from kinematics import TabletPlanner, generate_test_human
+from .human import generate_test_human
+from .planner import TabletPlanner
 
 def main(json_path: str):
     # load human

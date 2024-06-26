@@ -11,7 +11,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 import json
-from .kinematics import Human, TabletPlanner, load_bad_json_data
+from .human import Human
+from .planner import TabletPlanner
+from .utils import load_bad_json_data
 
 class ShowTabletNode(Node):
     def __init__(self):

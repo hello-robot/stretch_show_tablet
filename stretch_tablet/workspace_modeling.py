@@ -1,12 +1,12 @@
 import numpy as np
 import sophuspy as sp
-from scipy.spatial.transform import Rotation as R
 
-from kinematics import TabletPlanner, generate_test_human
+from human import generate_test_human
+from planner import TabletPlanner
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from matplotlib.colors import ListedColormap, Normalize
+from matplotlib.colors import Normalize
 from plot_tools import plot_coordinate_frame, plot_coordinate_frame_2d, plot_base_reachability
 
 import json
