@@ -273,8 +273,8 @@ def characterize_tablet_workspace_cost():
         a.set_axisbelow(True)
         plt.grid()
 
-        f.savefig(str(k+1)+".png")
-        # plt.show()
+        # f.savefig(str(k+1)+".png")
+        plt.show()
 
 def test_ik_checker():
     planner = TabletPlanner()

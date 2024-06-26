@@ -204,8 +204,8 @@ class TabletPlanner:
         self.joint_cost_weights = {
             "base": 1.,
             "lift": 0.1,
-            "arm_extension": 100.,
-            "yaw": 10.,
+            "arm_extension": 10.,
+            "yaw": 1.,
             "pitch": 0.1,
             "roll": 0.1,
         }
