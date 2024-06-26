@@ -9,6 +9,7 @@ from human import Human, generate_test_human
 from utils import spherical_to_cartesian
 
 import os
+import time
 
 # test
 import matplotlib.pyplot as plt
@@ -153,9 +154,40 @@ class TabletPlanner:
         cost = (1. / (2. * n)) * cost
         return cost
 
+    def _ik_cost_optimization_target(self, xy, handle_cost_function, world_target):
+        r = np.eye(3)
+        p = np.array([xy[0], xy[1], 0.])
+        world_base_link = sp.SE3(r, p)
+        q, _ = self.ik(world_base_link=world_base_link, world_target=world_target)
+        return handle_cost_function(q)
+
+    def get_base_location(self, handle_cost_function, tablet_pose_world: sp.SE3):
+        # TODO: add in human pose for removing points near the human
+
+        # heuristics from workspace sampling
+        r = 0.5
+        th = np.deg2rad(45.)
+
+        # get initial guess
+        base_rotation = np.eye(3)
+        base_position = np.array(
+            [
+                -r * np.sin(th),
+                r * np.cos(th),
+                0.
+            ]
+        )
+        base_pose_tablet = sp.SE3(base_rotation, base_position)
+        base_pose_world = tablet_pose_world * base_pose_tablet
+        
+        initial_xy = base_pose_world.translation()[:2]
+        
+        result = minimize(lambda params: self._ik_cost_optimization_target(params, handle_cost_function, tablet_pose_world), initial_xy, method='CG')
+        return result.x
+
     @staticmethod
     def reachable(human: Human):
-        pass
+        raise NotImplementedError
 
     def fk(self, q_state) -> sp.SE3:
         position, orientation = self.ik_solver.compute_fk(q_state)
@@ -207,9 +239,10 @@ class TabletPlanner:
 # tests
 def test(args):
     data_dir = args.data_dir
-    _test_spherical_coordinates()
-    _test_cost_function()
-    _test_generate_points(data_dir)
+    # _test_spherical_coordinates()
+    # _test_cost_function()
+    # _test_generate_points(data_dir)
+    _test_base_optimizer(data_dir)
 
 def _test_spherical_coordinates():
     f = plt.figure()
@@ -246,6 +279,18 @@ def _test_generate_points(data_dir):
         q_soln, _ = tp.ik(tablet)
         print(q_soln)
     
+def _test_base_optimizer(data_dir):
+    tp = TabletPlanner()
+    human = generate_test_human(data_dir, 1)
+    tablet = TabletPlanner.in_front_of_eyes(human)
+    start = time.time()
+    xy = tp.get_base_location(tp.cost_midpoint_displacement, tablet)
+    duration = time.time() - start
+    p = np.array([xy[0], xy[1], 0.])
+    r = np.eye(3)
+    print("Result computed in", duration, "seconds")
+    print(sp.SE3(r, p))
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
