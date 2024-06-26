@@ -235,7 +235,7 @@ def characterize_tablet_workspace_cost():
 
                 else:
                     costs[i, j] = float('inf')
-        
+
         # plot cost map and optimal solution
         f = plt.figure()
         a = f.add_subplot()
@@ -258,6 +258,10 @@ def characterize_tablet_workspace_cost():
         human_pose = np.array(human_pose).T
         
         a.scatter(*human_pose[:2, :], color='k')
+
+        # compare against tablet optimizer
+        optimal_soln = planner.get_base_location(planner.cost_midpoint_displacement, target)
+        a.scatter(*optimal_soln, c='g', marker='x')
 
         # set up colorbar visualization
         norm = Normalize(vmin=0, vmax=np.max(costs))

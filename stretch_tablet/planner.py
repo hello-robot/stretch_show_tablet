@@ -155,11 +155,21 @@ class TabletPlanner:
         return cost
 
     def _ik_cost_optimization_target(self, xy, handle_cost_function, world_target):
+        # run IK
         r = np.eye(3)
         p = np.array([xy[0], xy[1], 0.])
         world_base_link = sp.SE3(r, p)
-        q, _ = self.ik(world_base_link=world_base_link, world_target=world_target)
-        return handle_cost_function(q)
+        q, ik_stats = self.ik(world_base_link=world_base_link, world_target=world_target)
+        
+        # gains
+        k_f = 1.
+        k_err = 10.
+
+        # costs
+        f_cost = handle_cost_function(q)
+        error_cost = np.linalg.norm(ik_stats["final_error"])
+        total_cost = k_f * f_cost + k_err * error_cost
+        return total_cost
 
     def get_base_location(self, handle_cost_function, tablet_pose_world: sp.SE3):
         # TODO: add in human pose for removing points near the human
