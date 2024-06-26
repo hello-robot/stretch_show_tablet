@@ -6,6 +6,7 @@ from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
 
 import os
 import json
+from enum import Enum
 
 # testing
 import matplotlib.pyplot as plt
@@ -13,6 +14,7 @@ from plot_tools import plot_coordinate_frame
 
 EPS = 10.e-9
 
+# helper functions
 def load_bad_json_data(data_string):
     data_string = data_string.replace("'", "\"")
     data_string = data_string.replace("(", "[")
@@ -52,6 +54,34 @@ def spherical_to_cartesian(radius, azimuth, elevation):
     
     return [x, y, z]
 
+def in_range(value, range):
+    return True if value >= range[0] and value <= range[1] else False
+
+class Direction(Enum):
+    UP = 1
+    DOWN = 2
+    LEFT = 3
+    RIGHT = 4
+    IN = 5
+    OUT = 6
+
+def get_vector_direction_image_plane(v: np.ndarray) -> Direction:
+    x = v[0]
+    y = v[1]
+    
+    theta = np.arctan2(y, x)
+
+    PI_4 = np.pi / 4.
+    if in_range(theta, [-PI_4, PI_4]):
+        return Direction.RIGHT
+    elif in_range(theta, [-3*PI_4, -PI_4]):
+        return Direction.DOWN
+    elif in_range(theta, [PI_4, 3*PI_4]):
+        return Direction.UP
+    else:
+        return Direction.LEFT
+
+# objects
 class HumanKinematics:
     def __init__(self):
         # transforms
@@ -158,6 +188,46 @@ class Human:
     def update_preferences(self, new_preferences: dict):
         for key, value in new_preferences.items():
             self.preferences[key] = value
+
+class TabletController:
+    def __init__(self):
+        self.tablet_horizontal_deadband = [-0.1, 0.1]
+        self.tablet_portrait_x_offset = 0.15
+
+    def get_head_vertical_vector(self, human: Human):
+        face_landmarks = human.pose_estimate.face_estimate
+        chin_xyz = np.array(face_landmarks["chin_middle"])
+        nose_xyz = np.array(face_landmarks["nose_tip"])
+        return nose_xyz - chin_xyz
+
+    def get_head_direction(self, human: Human):
+        face_vector = self.get_head_vertical_vector(human)
+        return get_vector_direction_image_plane(face_vector)
+
+    def get_tablet_yaw_action(self, human: Human):
+        """
+        Returns rad
+        """
+        face_landmarks = human.pose_estimate.face_estimate
+        chin_xyz = face_landmarks["chin_middle"]
+
+        head_direction = self.get_head_direction(human)
+
+        if head_direction == Direction.UP:
+            x = chin_xyz[0]
+        elif head_direction == Direction.LEFT:
+            x = chin_xyz[1] + self.tablet_portrait_x_offset
+        elif head_direction == Direction.RIGHT:
+            x = -chin_xyz[1] - self.tablet_portrait_x_offset
+        else:
+            return 0.
+
+        if in_range(x, self.tablet_horizontal_deadband):
+            return 0.
+        
+        Kp = 0.2
+        yaw_action = Kp * (-1 * x)
+        return yaw_action
 
 class TabletPlanner:
     def __init__(self):
