@@ -8,6 +8,10 @@ import os
 import json
 from enum import Enum
 
+# testing
+import matplotlib.pyplot as plt
+from plot_tools import plot_coordinate_frame
+
 EPS = 10.e-9
 
 # helper functions
@@ -228,24 +232,53 @@ class TabletController:
 class TabletPlanner:
     def __init__(self):
         self.controlled_joints = [
-            # "x_prismatic_joint",
-            "z_revolute_joint",
+            "joint_mobile_base_rotation",
             "joint_lift",
             "joint_arm_l0",
-            "joint_arm_l1",
-            "joint_arm_l2",
-            "joint_arm_l3",
+            # "joint_arm_l1",
+            # "joint_arm_l2",
+            # "joint_arm_l3",
             "joint_wrist_yaw",
             "joint_wrist_pitch",
             "joint_wrist_roll"
         ]
-        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_re3_revolute.urdf")
+
+        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_base_rotation_ik.urdf")
         self.ik_solver = PinocchioIKSolver(
             urdf_path=urdf_path,
             ee_link_name="link_grasp_center",
             # ee_link_name="link_gripper_s3_body",
             controlled_joints=self.controlled_joints
         )
+
+        self.lower_joint_limits = {
+            "base": -3.14,  # rotation
+            # "base": -5.,  # translation
+            "lift": 0.,
+            "arm_extension": 0.,
+            "yaw": -1.75,
+            "pitch": -1.57,
+            "roll": -3.14,
+        }
+
+        self.upper_joint_limits = {
+            "base": 3.14,  # rotation
+            # "base": 5.,  # translation
+            "lift": 1.1,
+            "arm_extension": 0.13 * 4,
+            "yaw": 4.,
+            "pitch": 0.56,
+            "roll": 3.14,
+        }
+
+        self.joint_cost_weights = {
+            "base": 1.,
+            "lift": 0.1,
+            "arm_extension": 10.,
+            "yaw": 1.,
+            "pitch": 0.1,
+            "roll": 0.1,
+        }
 
     @staticmethod
     def in_front_of_eyes(human: Human) -> sp.SE3:
@@ -272,12 +305,83 @@ class TabletPlanner:
         return tablet_world
     
     @staticmethod
+    def compute_tablet_rotation_matrix(point, azimuth):
+        Rz = np.array([[np.cos(azimuth), -np.sin(azimuth), 0], [np.sin(azimuth), np.cos(azimuth), 0], [0, 0, 1]])
+
+        x = -1 * np.atleast_2d(point).T
+        y = Rz @ (np.atleast_2d([0, -1, 0]).T)
+        z = np.cross(x.T, y.T).T
+
+        r = np.array([x, y, z]).T
+        r = np.squeeze(r)
+
+        r = sp.to_orthogonal_3d(r)
+
+        return r
+
+    @staticmethod
+    def generate_tablet_view_points(radius=0.5, n=9):
+        """
+        generates points in the head frame
+        """
+        if n == 9:
+            azimuths = [-30., 0., 30.]
+        elif n == 6:
+            azimuths = [0., -30.]
+        else:
+            raise ValueError
+        
+        angles = [90., 112.5, 135.]
+
+        azimuths = [np.deg2rad(a) for a in azimuths]
+        angles = [np.deg2rad(a) for a in angles]
+
+        frames = []
+
+        for az in azimuths:
+            for an in angles:
+                point = np.array(spherical_to_cartesian(radius, az, an))
+                r = TabletPlanner.compute_tablet_rotation_matrix(point, az)
+                frames.append(sp.SE3(r, point))
+        
+        return frames
+    
+    def cost_midpoint_displacement(self, q):
+        # see (3.57) in Siciliano - midpoint distance cost
+        cost = 0.
+        n = len(q.keys())
+        for key, value in q.items():
+            # compute term
+            lo = self.lower_joint_limits[key]
+            hi = self.upper_joint_limits[key]
+            mid = (hi + lo) / 2.
+
+            numerator = value - mid
+            denominator = hi - lo
+            term = (numerator / denominator) ** 2.
+
+            # add weight
+            weight = self.joint_cost_weights[key]
+            
+            cost += weight * term
+
+        cost = (1. / (2. * n)) * cost
+        return cost
+
+    @staticmethod
     def reachable(human: Human):
         pass
 
-    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3()):
-        # TODO: use world_base_link to transform the target into base link frame
+    def fk(self, q_state) -> sp.SE3:
+        position, orientation = self.ik_solver.compute_fk(q_state)
+        r = R.from_quat(orientation).as_matrix()
+        return sp.SE3(r, position)
+
+    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3(), debug: bool=False):
+        # transform target in world frame to base frame
         target_base_frame = world_base_link.inverse() * world_target
+
+        # compute IK
         pos_desired = target_base_frame.translation()
         quat_desired = R.from_matrix(target_base_frame.rotationMatrix()).as_quat()
         q_soln, success, stats = self.ik_solver.compute_ik(
@@ -285,13 +389,25 @@ class TabletPlanner:
             quat_desired=quat_desired,
         )
 
+        if debug:
+            fk = self.ik_solver.compute_fk(q_soln)
+            # err = np.concatenate([pos_desired, quat_desired]) - np.concatenate([fk[0], fk[1]])
+            # print("error:", [f"{e:.4f}" for e in err])
+            # print(stats)
+            fk_se3 = sp.SE3(R.from_quat(fk[1]).as_matrix(), fk[0])
+            fk_world = world_base_link * fk_se3
+            print('original target:')
+            print(world_target.translation())
+            print('fk:')
+            print(fk_world.translation())
+
         base_drive = q_soln[0]
         lift = q_soln[1]
-        arm_ext = sum(q_soln[2:5])
-        yaw = q_soln[6]
-        pitch = q_soln[7]
-        roll = q_soln[8]
-        
+        arm_ext = q_soln[2]
+        yaw = q_soln[3]
+        pitch = q_soln[4]
+        roll = q_soln[5]
+
         result = {
             "base": base_drive,
             "lift": lift,
@@ -315,35 +431,32 @@ def generate_test_human(data_dir, i=6):
     return human
 
 def test_spherical_coordinates():
-    azimuths = [-30., 0., 30.]
-    angles = [90., 112.5, 135.]
-    radius = 1.
-
-    azimuths = [np.deg2rad(a) for a in azimuths]
-    angles = [np.deg2rad(a) for a in angles]
-
-    import matplotlib.pyplot as plt
     f = plt.figure()
     a = f.add_subplot(1, 1, 1, projection='3d')
 
-    for az in azimuths:
-        for an in angles:
-            point = spherical_to_cartesian(radius, az, an)
-            # print(az, an, "->", point)
-            a.scatter(*point)
+    frames = TabletPlanner.generate_tablet_view_points()
+    for frame in frames:
+        plot_coordinate_frame(a, frame.translation(), frame.rotationMatrix(), l=0.1)
     
+    plot_coordinate_frame(a, [0,0,0], np.eye(3), l=0.25)
+
     a.set_xlim([-1., 1.])
     a.set_ylim([-1., 1.])
     a.set_zlim([-1., 1.])
+    a.set_xlabel('x (m)')
+    a.set_ylabel('y (m)')
+    a.set_zlabel('z (m)')
     a.set_aspect('equal')
     plt.show()
 
-def main(args):
-    test_spherical_coordinates()
-    return
+def test_cost_function():
+    planner = TabletPlanner()
+    planner.cost_midpoint_displacement(None)
 
-    import matplotlib.pyplot as plt
-    # from plot_tools import plot_coordinate_frame
+def main(args):
+    # test_spherical_coordinates()
+    test_cost_function()
+    return
 
     tp = TabletPlanner()
 

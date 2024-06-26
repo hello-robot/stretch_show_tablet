@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.colors import ListedColormap, Normalize
 
 import os
 import json
@@ -19,6 +21,19 @@ def plot_coordinate_frame(a, p, R, l):
     a.plot(*y, color='g')
     a.plot(*z, color='b')
 
+def plot_coordinate_frame_2d(a, p, R, l):
+    x0 = y0 = p[:3]
+    x_axis = R[:3, 0] / np.linalg.norm(R[:3, 0])
+    y_axis = R[:3, 1] / np.linalg.norm(R[:3, 1])
+    x1 = x0 + x_axis * l
+    y1 = y0 + y_axis * l
+
+    x = np.vstack([x0, x1]).T
+    y = np.vstack([y0, y1]).T
+
+    a.plot(*x, color='r')
+    a.plot(*y, color='g')
+
 def points2np(points: list):
     points_np = np.zeros([3, len(points)])
     for i in range(len(points)):
@@ -26,6 +41,34 @@ def points2np(points: list):
         points_np[:, i] = [point["x"], point["y"], point["z"]]
 
     return points_np
+
+def plot_base_reachability(a, base_x, base_y, counts, targets):
+    a.computed_zorder = False
+
+    plot_x, plot_y = np.meshgrid(base_x, base_y)
+    plot_z = np.zeros_like(plot_x)
+
+    # set up custom colormap
+    cmap_brg = cm.get_cmap('brg')
+    custom_brg = cmap_brg(np.linspace(0.5, 1, len(targets) + 1))
+    custom_brg = ListedColormap(custom_brg, N=len(targets))
+
+    # plot floor
+    plot_x = plot_x.flatten()
+    plot_y = plot_y.flatten()
+    plot_z = plot_z.flatten()
+    counts = counts.flatten()
+    a.scatter(plot_x, plot_y, plot_z, c=counts, cmap=custom_brg, edgecolors='none', alpha=0.75, zorder=-1)
+
+    # colorbar
+    norm = Normalize(vmin=0, vmax=len(targets))
+    sm = cm.ScalarMappable(cmap=custom_brg, norm=norm)
+    sm.set_array([])
+    plt.colorbar(sm, ax=a)
+
+    # targets
+    for target in targets:
+        plot_coordinate_frame(a, target.translation(), target.rotationMatrix(), l=0.1)
 
 # test
 def test_plot_coord_frame():
