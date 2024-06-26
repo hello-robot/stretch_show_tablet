@@ -3,7 +3,7 @@ from rclpy.node import Node
 
 from std_msgs.msg import String
 
-from .kinematics import load_bad_json_data
+from .kinematics import load_bad_json_data, TabletController, Human
 import json
 
 def in_range(value, range):
@@ -29,7 +29,11 @@ class HeadTracker(Node):
         )
 
         # state
-        # self.face_landmarks = None
+        self.human = Human()
+        self.controller = TabletController()
+
+        # config
+        self.debug = False
 
     # callbacks
     def callback_face_landmarks(self, msg):
@@ -42,29 +46,23 @@ class HeadTracker(Node):
         if data is None:
             return
 
-        # print(json.dumps(data, indent=2))
-        # self.get_logger().info(str(data["chin_middle"]))
-        # self.face_landmarks = data
+        # update human estimate
+        self.human.pose_estimate.set_face_estimate(data)
 
-        move_str = self.get_yaw_action(data["chin_middle"])
-        self.get_logger().info(move_str)
+        # compute yaw action and  send command
+        yaw_action = self.controller.get_tablet_yaw_action(self.human)
         move_msg = String()
-        move_msg.data = str(move_str)
+        move_msg.data = str(json.dumps({'joint_wrist_yaw': yaw_action}))
         self.pub_tablet_move_by.publish(move_msg)
 
-    # helpers
-    def get_yaw_action(self, chin_xyz):
-        x_deadband = [-0.1, 0.1]
-        x = chin_xyz[0]
-        if in_range(x, x_deadband):
-            return json.dumps({"joint_wrist_yaw": 0.})
-        
-        Kp = 0.2
-        yaw_action = Kp * (-1 * x)
-        move_by_cmd = {
-            "joint_wrist_yaw": yaw_action
-        }
-        return json.dumps(move_by_cmd)
+        # debug
+        self.print(str(yaw_action))
+        self.print(str(self.controller.get_head_vertical_vector(self.human)))
+        self.print(str(self.controller.get_head_direction(self.human)))
+
+    def print(self, msg):
+        if self.debug:
+            self.get_logger().info(str(msg))
 
     # main
     def main(self):

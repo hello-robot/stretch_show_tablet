@@ -31,14 +31,24 @@ class StretchMain(HelloNode):
             qos_profile=1
         )
 
+        self.init()
         rclpy.spin(self)
+
+    def init(self):
+        """
+        other init
+        """
+        self.move_to_pose(
+            {
+                "joint_wrist_roll": 0.
+            }
+        )
 
     # callbacks
     def move_by(self, msg):
         # self.get_logger().info(str(msg.data))
         data = json.loads(msg.data)
         delta = data["joint_wrist_yaw"]
-        self.get_logger().info(str(delta))
         if abs(delta) < 0.001:
             return
         
@@ -46,7 +56,6 @@ class StretchMain(HelloNode):
         if abs(delta) > max_delta:
             delta = np.sign(delta) * max_delta
 
-        self.get_logger().info(str('hi'))
         # self.move
         current_state = self.joint_state
         names = current_state.name
