@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 
 from human import Human
 from utils import load_bad_json_data
@@ -30,15 +30,29 @@ class HeadTracker(Node):
             qos_profile=1
         )
 
+        self.sub_toggle_on = self.create_subscription(
+            Bool,
+            "/stretch_tablet/toggle/head_tracker",
+            callback=self.callback_toggle,
+            qos_profile=1
+        )
+
         # state
         self.human = Human()
         self.controller = TabletController()
+        self.toggled_on = False
 
         # config
         self.debug = False
 
     # callbacks
+    def callback_toggle(self, msg: Bool):
+        self.toggled_on = msg.data
+    
     def callback_face_landmarks(self, msg):
+        if not self.toggled_on:
+            return
+        
         msg_data = msg.data.replace("\"", "")
         if msg_data == "None" or msg_data is None:
             return

@@ -66,7 +66,7 @@ class StretchMain(HelloNode):
 
         self.move_to_pose({"joint_wrist_yaw": cmd_yaw_position}, blocking=False)
 
-    def move_to_goal(self, msg):
+    def move_to_goal(self, msg, confirm: bool=True):
         # msg_data = msg.data.replace("\"", "")
         data = json.loads(msg.data)
         pose = enforce_joint_limits(data)
@@ -80,12 +80,15 @@ class StretchMain(HelloNode):
             "joint_wrist_roll": pose["roll"],
         }
 
-        print("moving to pose:")
-        print(pose_cmd)
-        if input("enter y to continue: ").lower() == 'y':
-            self.move_to_pose(pose_cmd)
+        if confirm:
+            print("moving to pose:")
+            print(pose_cmd)
+            if input("enter y to continue: ").lower() == 'y':
+                self.move_to_pose(pose_cmd)
+            else:
+                print("aborting!")
         else:
-            print("aborting!")
+            self.move_to_pose(pose_cmd)
 
 def main():
     StretchMain()
