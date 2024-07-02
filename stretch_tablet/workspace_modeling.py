@@ -1,14 +1,15 @@
 import numpy as np
 import sophuspy as sp
-from scipy.spatial.transform import Rotation as R
 
-from kinematics import TabletPlanner, generate_test_human
+from human import generate_test_human
+from planner import TabletPlanner
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from matplotlib.colors import ListedColormap, Normalize
+from matplotlib.colors import Normalize
 from plot_tools import plot_coordinate_frame, plot_coordinate_frame_2d, plot_base_reachability
 
+import os
 import json
 
 PI_2 = np.pi / 2.
@@ -180,7 +181,9 @@ def characterize_tablet_workspace():
 def characterize_tablet_workspace_cost():
     # init planner
     planner = TabletPlanner()
-    human = generate_test_human("/home/lamsey/ament_ws/src/stretch_tablet/data/matt/")
+    home = os.path.expanduser('~')
+    data_dir = os.path.join(home, 'ament_ws/src/stretch_tablet/data/matt/')
+    human = generate_test_human(data_dir)
     targets = planner.generate_tablet_view_points()
 
     # transform targets to human head frame
@@ -235,7 +238,7 @@ def characterize_tablet_workspace_cost():
 
                 else:
                     costs[i, j] = float('inf')
-        
+
         # plot cost map and optimal solution
         f = plt.figure()
         a = f.add_subplot()
@@ -258,6 +261,10 @@ def characterize_tablet_workspace_cost():
         human_pose = np.array(human_pose).T
         
         a.scatter(*human_pose[:2, :], color='k')
+
+        # compare against tablet optimizer
+        optimal_soln = planner.get_base_location(planner.cost_midpoint_displacement, target)
+        a.scatter(*optimal_soln, c='g', marker='x')
 
         # set up colorbar visualization
         norm = Normalize(vmin=0, vmax=np.max(costs))
