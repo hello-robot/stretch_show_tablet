@@ -9,6 +9,7 @@ import matplotlib.cm as cm
 from matplotlib.colors import Normalize
 from plot_tools import plot_coordinate_frame, plot_coordinate_frame_2d, plot_base_reachability
 
+import os
 import json
 
 PI_2 = np.pi / 2.
@@ -180,7 +181,9 @@ def characterize_tablet_workspace():
 def characterize_tablet_workspace_cost():
     # init planner
     planner = TabletPlanner()
-    human = generate_test_human("/home/lamsey/ament_ws/src/stretch_tablet/data/matt/")
+    home = os.path.expanduser('~')
+    data_dir = os.path.join(home, 'ament_ws/src/stretch_tablet/data/matt/')
+    human = generate_test_human(data_dir)
     targets = planner.generate_tablet_view_points()
 
     # transform targets to human head frame
