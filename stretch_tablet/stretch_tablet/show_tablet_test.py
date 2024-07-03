@@ -101,8 +101,16 @@ class ShowTabletNode(Node):
         request.human_joint_dict = body_string
         request.camera_position = [v for v in camera_position]
         request.camera_orientation = [v for v in camera_orientation]
+        request.robot_position_world = [0., 0., 0.]
+        request.robot_orientation_world = [0., 0., 0., 1.]
 
         return request
+
+    def get_tablet_pose_from_service_response(self, response) -> sp.SE3:
+        """
+        returns the tablet's 6DOF pose in the robot's base frame
+        """
+        return sp.SE3(R.from_quat(response.tablet_orientation_robot_frame).as_matrix(), response.tablet_position_robot_frame)
 
     # main
     def main(self):
@@ -137,18 +145,10 @@ class ShowTabletNode(Node):
                             except Exception as e:
                                 self.get_logger().info(
                                     'Service call failed %r' % (e,))
-                            else:
-                                pass
-                                # self.get_logger().info('Result of tablet plan:')
-                                # self.get_logger().info(str(response.tablet_position))
-                                # self.get_logger().info(str(response.tablet_orientation))
                             break
 
                     # update ik
-                    # tablet_pose = self.planner.in_front_of_eyes(human=self.human)
-                    tablet_pose = sp.SE3(R.from_quat(response.tablet_orientation).as_matrix(), response.tablet_position)
-
-                    ik_soln, _ = self.planner.ik(tablet_pose)
+                    ik_soln = json.loads(response.robot_ik_solution_dict)
                     msg = String()
                     msg.data = json.dumps(ik_soln)
                     self.get_logger().info("publishing " + msg.data)

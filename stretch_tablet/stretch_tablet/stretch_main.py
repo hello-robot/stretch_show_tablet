@@ -13,8 +13,8 @@ def enforce_joint_limits(pose: dict) -> dict:
     pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
     pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
     pose["yaw"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
-    pose["pitch"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
-    pose["roll"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
+    pose["pitch"] = enforce_limits(pose["pitch"], -PI_2, PI_2)
+    pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
 
     return pose
 

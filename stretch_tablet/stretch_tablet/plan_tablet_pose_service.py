@@ -14,10 +14,10 @@ import json
 class PlanTabletPoseService(Node):
     def __init__(self):
         super().__init__('minimal_service')
-        self.srv = self.create_service(PlanTabletPose, 'plan_tablet_pose', self.add_three_ints_callback)
+        self.srv = self.create_service(PlanTabletPose, 'plan_tablet_pose', self.plan_tablet_callback)
         self.planner = TabletPlanner()
 
-    def add_three_ints_callback(self, request, response):
+    def plan_tablet_callback(self, request, response):
         # generate human
         body_dict = json.loads(request.human_joint_dict)
         camera_position = request.camera_position
@@ -35,9 +35,21 @@ class PlanTabletPoseService(Node):
         # self.get_logger().info(str(tablet_position))
         # self.get_logger().info(str(tablet_orientation))
 
+        # get robot base
+        robot_position = request.robot_position_world
+        robot_orientation = R.from_quat(request.robot_orientation_world).as_matrix()
+        robot_pose = sp.SE3(robot_orientation, robot_position)
+
+        # solve ik
+        ik_solution, _ = self.planner.ik(
+            world_target=tablet_pose_world,
+            world_base_link=robot_pose
+            )
+
         # save response
-        response.tablet_position = [v for v in tablet_position]
-        response.tablet_orientation = [v for v in tablet_orientation]
+        response.tablet_position_robot_frame = [v for v in tablet_position]
+        response.tablet_orientation_robot_frame = [v for v in tablet_orientation]
+        response.robot_ik_solution_dict = json.dumps(ik_solution)
 
         return response
 
