@@ -1,0 +1,12 @@
+# request
+string human_joint_dict
+geometry_msgs/PoseStamped camera_pose
+geometry_msgs/PoseStamped robot_pose
+
+---
+# response
+geometry_msgs/PoseStamped tablet_pose
+geometry_msgs/PointStamped robot_base_pose
+string[] robot_ik_joint_names
+float32[] robot_ik_joint_positions
+float32 plan_time_s

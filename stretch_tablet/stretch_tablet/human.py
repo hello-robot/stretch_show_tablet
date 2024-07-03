@@ -1,7 +1,7 @@
 import numpy as np
 import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
-from utils import load_bad_json, landmark_names
+from stretch_tablet.utils import load_bad_json, landmark_names
 
 import json
 
@@ -68,6 +68,9 @@ class HumanPoseEstimate:
 
     def set_camera_pose(self, world2camera_pose: sp.SE3):
         self.world2camera_pose = world2camera_pose
+
+    def get_camera_pose(self) -> sp.SE3:
+        return self.world2camera_pose
 
     def clear_estimates(self):
         self.body_estimate = None

@@ -1,5 +1,6 @@
 from setuptools import setup
 from glob import glob
+import os
 
 package_name = 'stretch_tablet'
 
@@ -13,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
         ('share/' + package_name + '/rviz', glob('rviz/*')),
+        (os.path.join('share', package_name, 'action'), glob('action/*.action')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -31,7 +33,10 @@ setup(
             'detect_body_landmarks = stretch_tablet.detect_body_landmarks:main',
             'record_test_data = stretch_tablet.record_test_data:main',
             'show_tablet_test = stretch_tablet.show_tablet_test:main',
-            'stretch_main = stretch_tablet.stretch_main:main'
+            'stretch_main = stretch_tablet.stretch_main:main',
+            'show_tablet_server = stretch_tablet.show_tablet_server:main',
+            'plan_tablet_pose_service = stretch_tablet.plan_tablet_pose_service:main',
+            'planner_service_test = stretch_tablet.planner_service_test:main',
         ],
     },
 )

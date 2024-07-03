@@ -13,8 +13,8 @@ def enforce_joint_limits(pose: dict) -> dict:
     pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
     pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
     pose["yaw"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
-    pose["pitch"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
-    pose["roll"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
+    pose["pitch"] = enforce_limits(pose["pitch"], -PI_2, PI_2)
+    pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
 
     return pose
 
@@ -28,6 +28,13 @@ class StretchMain(HelloNode):
             String,
             "/stretch_tablet/move_by",
             callback=self.move_by,
+            qos_profile=1
+        )
+
+        self.create_subscription(
+            String,
+            "/stretch_tablet/goal",
+            callback=self.move_to_goal,
             qos_profile=1
         )
 
@@ -46,7 +53,7 @@ class StretchMain(HelloNode):
 
     # callbacks
     def move_by(self, msg):
-        # self.get_logger().info(str(msg.data))
+        self.get_logger().info(str(msg.data))
         data = json.loads(msg.data)
         delta = data["joint_wrist_yaw"]
         if abs(delta) < 0.001:
@@ -72,7 +79,7 @@ class StretchMain(HelloNode):
         pose = enforce_joint_limits(data)
 
         pose_cmd = {
-            "translate_mobile_base": pose["base"],
+            "rotate_mobile_base": pose["base"],
             "joint_lift": pose["lift"],
             "wrist_extension": pose["arm_extension"],
             "joint_wrist_yaw": pose["yaw"],

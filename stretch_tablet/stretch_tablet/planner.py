@@ -5,15 +5,15 @@ from scipy.optimize import minimize
 
 from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
 
-from human import Human, generate_test_human
-from utils import spherical_to_cartesian
+from stretch_tablet.human import Human, generate_test_human
+from stretch_tablet.utils import spherical_to_cartesian
 
 import os
 import time
 
 # test
 import matplotlib.pyplot as plt
-from plot_tools import plot_coordinate_frame
+from stretch_tablet.plot_tools import plot_coordinate_frame
 
 class TabletPlanner:
     def __init__(self):
@@ -29,7 +29,7 @@ class TabletPlanner:
             "joint_wrist_roll"
         ]
 
-        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_tablet/description/stretch_base_rotation_ik.urdf")
+        urdf_path = os.path.join(os.path.expanduser("~"), "ament_ws/src/stretch_show_tablet/stretch_tablet/description/stretch_base_rotation_ik.urdf")
         self.ik_solver = PinocchioIKSolver(
             urdf_path=urdf_path,
             ee_link_name="link_grasp_center",

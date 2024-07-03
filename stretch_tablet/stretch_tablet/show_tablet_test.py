@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 
 from std_msgs.msg import String
+from geometry_msgs.msg import PoseStamped, Point, Quaternion
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -11,9 +12,11 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 import json
-from .human import Human
-from .planner import TabletPlanner
-from .utils import load_bad_json_data
+from stretch_tablet.human import Human
+from stretch_tablet.planner import TabletPlanner
+from stretch_tablet.utils import load_bad_json_data
+
+from stretch_tablet_interfaces.srv import PlanTabletPose
 
 class ShowTabletNode(Node):
     def __init__(self):
@@ -40,6 +43,9 @@ class ShowTabletNode(Node):
             callback=self.callback_body_landmarks,
             qos_profile=1
         )
+
+        # srv
+        self.srv_plan_tablet_pose = self.create_client(PlanTabletPose, 'plan_tablet_pose')
 
         # tf
         self.tf_buffer = Buffer()
@@ -82,6 +88,45 @@ class ShowTabletNode(Node):
     def go_to_pose(self, pose):
         pass
 
+    def generate_pose_stamped(self, position, orientation):
+        pose_stamped = PoseStamped()
+        point = Point()
+        point.x = position[0]
+        point.y = position[1]
+        point.z = position[2]
+        quat = Quaternion()
+        quat.x = orientation[0]
+        quat.y = orientation[1]
+        quat.z = orientation[2]
+        quat.w = orientation[3]
+        pose_stamped.pose.position = point
+        pose_stamped.pose.orientation = quat
+        pose_stamped.header.stamp = self.get_clock().now().to_msg()
+        return pose_stamped
+
+    def build_tablet_pose_request(self):
+        request = PlanTabletPose.Request()
+        human = self.human
+
+        # extract request info
+        body_string = json.dumps(human.pose_estimate.body_estimate)
+        camera_pose = human.pose_estimate.get_camera_pose()
+        camera_position = camera_pose.translation()
+        camera_orientation = R.from_matrix(camera_pose.rotationMatrix()).as_quat()
+
+        # construct request
+        request.human_joint_dict = body_string
+        request.camera_pose = self.generate_pose_stamped(camera_position, camera_orientation)
+        request.robot_pose = self.generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.])
+
+        return request
+
+    # def get_tablet_pose_from_service_response(self, response) -> sp.SE3:
+    #     """
+    #     returns the tablet's 6DOF pose in the robot's base frame
+    #     """
+    #     return sp.SE3(R.from_quat(response.tablet_orientation_robot_frame).as_matrix(), response.tablet_position_robot_frame)
+
     # main
     def main(self):
         while rclpy.ok():
@@ -103,13 +148,29 @@ class ShowTabletNode(Node):
                 self.human.pose_estimate.set_camera_pose(world2camera_pose)
 
                 if self.human.pose_estimate.is_populated():
+                    plan_request = self.build_tablet_pose_request()
+                    future = self.srv_plan_tablet_pose.call_async(plan_request)
+
+                    # wait for srv to finish
+                    while rclpy.ok():
+                        rclpy.spin_once(self)
+                        if future.done():
+                            try:
+                                response = future.result()
+                            except Exception as e:
+                                self.get_logger().info(
+                                    'Service call failed %r' % (e,))
+                            break
+
                     # update ik
-                    tablet_pose = self.planner.in_front_of_eyes(human=self.human)
-                    ik_soln, _ = self.planner.ik(tablet_pose)
-                    # print(ik_soln)
+                    ik_soln = {key: value for key, value in zip(response.robot_ik_joint_names, response.robot_ik_joint_positions)}
                     msg = String()
                     msg.data = json.dumps(ik_soln)
+                    self.get_logger().info("publishing " + msg.data)
                     self.pub_tablet_goal.publish(msg)
+                    
+                    # debug
+                    self.get_logger().info("Plan Time: " + str(response.plan_time_s))
 
                     # clear buffer
                     self.human.pose_estimate.clear_estimates()
