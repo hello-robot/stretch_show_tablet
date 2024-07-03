@@ -1,7 +1,9 @@
+import rclpy.time
 from stretch_tablet_interfaces.srv import PlanTabletPose
 
 import rclpy
 from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped, Point, Quaternion
 
 import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
@@ -10,6 +12,13 @@ from stretch_tablet.planner import TabletPlanner
 from stretch_tablet.human import Human
 
 import json
+import time
+
+def point2tuple(p: Point):
+    return [p.x, p.y, p.z]
+
+def quat2tuple(q: Quaternion):
+    return [q.x, q.y, q.z, q.w]
 
 class PlanTabletPoseService(Node):
     def __init__(self):
@@ -17,11 +26,28 @@ class PlanTabletPoseService(Node):
         self.srv = self.create_service(PlanTabletPose, 'plan_tablet_pose', self.plan_tablet_callback)
         self.planner = TabletPlanner()
 
+    def generate_pose_stamped(self, position, orientation):
+        pose_stamped = PoseStamped()
+        point = Point()
+        point.x = position[0]
+        point.y = position[1]
+        point.z = position[2]
+        quat = Quaternion()
+        quat.x = orientation[0]
+        quat.y = orientation[1]
+        quat.z = orientation[2]
+        quat.w = orientation[3]
+        pose_stamped.pose.position = point
+        pose_stamped.pose.orientation = quat
+        pose_stamped.header.stamp = self.get_clock().now().to_msg()
+        return pose_stamped
+
     def plan_tablet_callback(self, request, response):
+        plan_start_time = time.time()
         # generate human
         body_dict = json.loads(request.human_joint_dict)
-        camera_position = request.camera_position
-        camera_orientation = R.from_quat(request.camera_orientation).as_matrix()
+        camera_position = point2tuple(request.camera_pose.pose.position)
+        camera_orientation = R.from_quat(quat2tuple(request.camera_pose.pose.orientation)).as_matrix()
         camera_transform = sp.SE3(camera_orientation, camera_position)
 
         human = Human()
@@ -31,13 +57,19 @@ class PlanTabletPoseService(Node):
         # run planner
         tablet_pose_world = self.planner.in_front_of_eyes(human)
         tablet_position = tablet_pose_world.translation()
-        tablet_orientation = R.from_matrix(tablet_pose_world.rotationMatrix()).as_quat()
+        tablet_orientation = R.from_matrix(tablet_pose_world.rotationMatrix()).as_quat().tolist()
         # self.get_logger().info(str(tablet_position))
         # self.get_logger().info(str(tablet_orientation))
 
+        # optimize base location
+        base_location_world = self.planner.get_base_location(
+            handle_cost_function=self.planner.cost_midpoint_displacement,
+            tablet_pose_world=tablet_pose_world
+        )
+
         # get robot base
-        robot_position = request.robot_position_world
-        robot_orientation = R.from_quat(request.robot_orientation_world).as_matrix()
+        robot_position = point2tuple(request.robot_pose.pose.position)
+        robot_orientation = R.from_quat(quat2tuple(request.robot_pose.pose.orientation)).as_matrix()
         robot_pose = sp.SE3(robot_orientation, robot_position)
 
         # solve ik
@@ -47,9 +79,11 @@ class PlanTabletPoseService(Node):
             )
 
         # save response
-        response.tablet_position_robot_frame = [v for v in tablet_position]
-        response.tablet_orientation_robot_frame = [v for v in tablet_orientation]
-        response.robot_ik_solution_dict = json.dumps(ik_solution)
+        response.tablet_pose = self.generate_pose_stamped(tablet_position, tablet_orientation)
+        response.robot_ik_joint_names = [k for k in ik_solution.keys()]
+        response.robot_ik_joint_positions = [v for v in ik_solution.values()]
+        # response.robot_base_pose_xy = [v for v in base_location_world]
+        response.plan_time_s = time.time() - plan_start_time
 
         return response
 

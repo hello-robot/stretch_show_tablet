@@ -79,7 +79,7 @@ class StretchMain(HelloNode):
         pose = enforce_joint_limits(data)
 
         pose_cmd = {
-            "translate_mobile_base": pose["base"],
+            "rotate_mobile_base": pose["base"],
             "joint_lift": pose["lift"],
             "wrist_extension": pose["arm_extension"],
             "joint_wrist_yaw": pose["yaw"],

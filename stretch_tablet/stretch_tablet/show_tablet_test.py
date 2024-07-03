@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 
 from std_msgs.msg import String
+from geometry_msgs.msg import PoseStamped, Point, Quaternion
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -87,6 +88,22 @@ class ShowTabletNode(Node):
     def go_to_pose(self, pose):
         pass
 
+    def generate_pose_stamped(self, position, orientation):
+        pose_stamped = PoseStamped()
+        point = Point()
+        point.x = position[0]
+        point.y = position[1]
+        point.z = position[2]
+        quat = Quaternion()
+        quat.x = orientation[0]
+        quat.y = orientation[1]
+        quat.z = orientation[2]
+        quat.w = orientation[3]
+        pose_stamped.pose.position = point
+        pose_stamped.pose.orientation = quat
+        pose_stamped.header.stamp = self.get_clock().now().to_msg()
+        return pose_stamped
+
     def build_tablet_pose_request(self):
         request = PlanTabletPose.Request()
         human = self.human
@@ -99,18 +116,16 @@ class ShowTabletNode(Node):
 
         # construct request
         request.human_joint_dict = body_string
-        request.camera_position = [v for v in camera_position]
-        request.camera_orientation = [v for v in camera_orientation]
-        request.robot_position_world = [0., 0., 0.]
-        request.robot_orientation_world = [0., 0., 0., 1.]
+        request.camera_pose = self.generate_pose_stamped(camera_position, camera_orientation)
+        request.robot_pose = self.generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.])
 
         return request
 
-    def get_tablet_pose_from_service_response(self, response) -> sp.SE3:
-        """
-        returns the tablet's 6DOF pose in the robot's base frame
-        """
-        return sp.SE3(R.from_quat(response.tablet_orientation_robot_frame).as_matrix(), response.tablet_position_robot_frame)
+    # def get_tablet_pose_from_service_response(self, response) -> sp.SE3:
+    #     """
+    #     returns the tablet's 6DOF pose in the robot's base frame
+    #     """
+    #     return sp.SE3(R.from_quat(response.tablet_orientation_robot_frame).as_matrix(), response.tablet_position_robot_frame)
 
     # main
     def main(self):
@@ -148,11 +163,14 @@ class ShowTabletNode(Node):
                             break
 
                     # update ik
-                    ik_soln = json.loads(response.robot_ik_solution_dict)
+                    ik_soln = {key: value for key, value in zip(response.robot_ik_joint_names, response.robot_ik_joint_positions)}
                     msg = String()
                     msg.data = json.dumps(ik_soln)
                     self.get_logger().info("publishing " + msg.data)
                     self.pub_tablet_goal.publish(msg)
+                    
+                    # debug
+                    self.get_logger().info("Plan Time: " + str(response.plan_time_s))
 
                     # clear buffer
                     self.human.pose_estimate.clear_estimates()

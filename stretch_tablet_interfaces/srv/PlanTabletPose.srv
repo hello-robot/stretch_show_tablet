@@ -1,13 +1,12 @@
 # request
 string human_joint_dict
-float32[] camera_position
-float32[] camera_orientation
-float32[] robot_position_world
-float32[] robot_orientation_world
+geometry_msgs/PoseStamped camera_pose
+geometry_msgs/PoseStamped robot_pose
 
 ---
 # response
-float32[] tablet_position_robot_frame
-float32[] tablet_orientation_robot_frame
-float32[] robot_base_pose_xya
-string robot_ik_solution_dict
+geometry_msgs/PoseStamped tablet_pose
+geometry_msgs/PointStamped robot_base_pose
+string[] robot_ik_joint_names
+float32[] robot_ik_joint_positions
+float32 plan_time_s
