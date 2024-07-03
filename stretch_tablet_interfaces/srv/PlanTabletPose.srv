@@ -1,0 +1,8 @@
+# request
+string human_joint_dict
+
+---
+# response
+float32[] tablet_position
+float32[] tablet_orientation
+float32[] robot_base_pose_xya

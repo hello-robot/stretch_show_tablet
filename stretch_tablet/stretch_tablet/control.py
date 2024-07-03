@@ -1,7 +1,7 @@
 import numpy as np
 
-from human import Human
-from utils import Direction, in_range, get_vector_direction_image_plane
+from stretch_tablet.human import Human
+from stretch_tablet.utils import Direction, in_range, get_vector_direction_image_plane
     
 class TabletController:
     def __init__(self):

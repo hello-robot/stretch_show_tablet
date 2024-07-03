@@ -1,7 +1,7 @@
 import numpy as np
 import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
-from utils import load_bad_json, landmark_names
+from stretch_tablet.utils import load_bad_json, landmark_names
 
 import json
 
