@@ -1,5 +1,7 @@
 # request
 string human_joint_dict
+float32[] camera_position
+float32[] camera_orientation
 
 ---
 # response

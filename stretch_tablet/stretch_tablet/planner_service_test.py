@@ -3,6 +3,8 @@ import sys
 import rclpy
 from rclpy.node import Node
 
+from scipy.spatial.transform import Rotation as R
+
 from stretch_tablet.human import generate_test_human
 
 import json
@@ -16,9 +18,19 @@ class TestPlannerClient(Node):
         self.req = PlanTabletPose.Request()
 
     def send_request(self):
+        # generate test human
         human = generate_test_human("/home/hello-robot/ament_ws/src/stretch_show_tablet/data/matt/")
+
+        # extract request info
         body_string = json.dumps(human.pose_estimate.body_estimate)
+        camera_pose = human.pose_estimate.get_camera_pose()
+        camera_position = camera_pose.translation()
+        camera_orientation = R.from_matrix(camera_pose.rotationMatrix()).as_quat()
+
+        # construct request
         self.req.human_joint_dict = body_string
+        self.req.camera_position = [v for v in camera_position]
+        self.req.camera_orientation = [v for v in camera_orientation]
         self.future = self.cli.call_async(self.req)
 
 

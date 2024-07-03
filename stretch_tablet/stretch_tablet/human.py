@@ -69,6 +69,9 @@ class HumanPoseEstimate:
     def set_camera_pose(self, world2camera_pose: sp.SE3):
         self.world2camera_pose = world2camera_pose
 
+    def get_camera_pose(self) -> sp.SE3:
+        return self.world2camera_pose
+
     def clear_estimates(self):
         self.body_estimate = None
         self.body_points = None
