@@ -31,6 +31,13 @@ class StretchMain(HelloNode):
             qos_profile=1
         )
 
+        self.create_subscription(
+            String,
+            "/stretch_tablet/goal",
+            callback=self.move_to_goal,
+            qos_profile=1
+        )
+
         self.init()
         rclpy.spin(self)
 
@@ -46,7 +53,7 @@ class StretchMain(HelloNode):
 
     # callbacks
     def move_by(self, msg):
-        # self.get_logger().info(str(msg.data))
+        self.get_logger().info(str(msg.data))
         data = json.loads(msg.data)
         delta = data["joint_wrist_yaw"]
         if abs(delta) < 0.001:

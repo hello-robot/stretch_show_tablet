@@ -1,5 +1,4 @@
 from stretch_tablet_interfaces.srv import PlanTabletPose
-import sys
 import rclpy
 from rclpy.node import Node
 
