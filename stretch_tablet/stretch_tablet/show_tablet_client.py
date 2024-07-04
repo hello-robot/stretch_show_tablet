@@ -26,8 +26,12 @@ class ShowTabletActionClient(Node):
 
         self.get_logger().info('Goal accepted :)')
 
+        self._goal_handle = goal_handle
         self._get_result_future = goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
+
+        # Start a 2 second timer [testing]
+        # self._timer = self.create_timer(2.0, self.cancel)
 
     def get_result_callback(self, future):
         result = future.result().result
@@ -40,9 +44,27 @@ class ShowTabletActionClient(Node):
             state = ShowTabletState(feedback.current_state)
         except ValueError as e:
             print(e)
-            state = -1
+            state = "UNKNOWN"
         
         self.get_logger().info('Current State: {0}'.format(state))
+
+    def cancel_done(self, future):
+        cancel_response = future.result()
+        if len(cancel_response.goals_canceling) > 0:
+            self.get_logger().info('Goal successfully canceled')
+        else:
+            self.get_logger().info('Goal failed to cancel')
+
+        rclpy.shutdown()
+
+    def cancel(self):
+        self.get_logger().info('Canceling goal')
+        # Cancel the goal
+        future = self._goal_handle.cancel_goal_async()
+        future.add_done_callback(self.cancel_done)
+
+        # Cancel the timer
+        self._timer.cancel()
 
 def main(args=None):
     rclpy.init(args=args)

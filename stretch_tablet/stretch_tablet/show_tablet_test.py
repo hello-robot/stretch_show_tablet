@@ -46,7 +46,8 @@ class ShowTabletNode(Node):
         )
 
         # srv
-        self.srv_plan_tablet_pose = self.create_client(PlanTabletPose, 'plan_tablet_pose')
+        self.srv_plan_tablet_pose = self.create_client(
+            PlanTabletPose, 'plan_tablet_pose')
 
         # tf
         self.tf_buffer = Buffer()
