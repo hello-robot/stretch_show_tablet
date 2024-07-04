@@ -5,6 +5,7 @@ from rclpy.node import Node
 from stretch_tablet_interfaces.action import ShowTablet
 
 from enum import Enum
+import time
 
 class ShowTabletState(Enum):
     IDLE = 0
@@ -33,7 +34,7 @@ class ShowTabletActionServer(Node):
     def state_idle(self):
         if self.abort:
             return ShowTabletState.EXIT
-            
+
         if False:
             return ShowTabletState.IDLE
         
@@ -42,43 +43,43 @@ class ShowTabletActionServer(Node):
     def state_look_at_human(self):
         if self.abort:
             return ShowTabletState.EXIT
-            
+
         return ShowTabletState.PLAN_TABLET_POSE
 
     def state_plan_tablet_pose(self):
         if self.abort:
             return ShowTabletState.EXIT
-            
+
         return ShowTabletState.NAVIGATE_BASE
 
     def state_navigate_base(self):
         if self.abort:
             return ShowTabletState.EXIT
-            
+
         return ShowTabletState.MOVE_ARM_TO_TABLET_POSE
     
     def state_move_arm_to_tablet_pose(self):
         if self.abort:
             return ShowTabletState.EXIT
-            
+
         return ShowTabletState.TRACK_FACE
 
     def state_track_face(self):
         if self.abort:
             return ShowTabletState.EXIT
-            
+
         return ShowTabletState.END_INTERACTION
 
     def state_end_interaction(self):
         if self.abort:
             return ShowTabletState.EXIT
-            
+
         return ShowTabletState.EXIT
 
     def state_exit(self):
         return ShowTabletState.EXIT
 
-    def run_state_machine(self, goal_handle):
+    def run_state_machine(self, goal_handle, test:bool=False):
         state = self.state_idle()
 
         while rclpy.ok():
@@ -104,11 +105,13 @@ class ShowTabletActionServer(Node):
 
             self.feedback.current_state = state.value
             goal_handle.publish_feedback(self.feedback)
+            if test:
+                time.sleep(0.25)
 
     def execute_callback(self, goal_handle):
         self.get_logger().info('Executing Show Tablet...')
         
-        self.run_state_machine(goal_handle)
+        self.run_state_machine(goal_handle, test=True)
 
         # get result
         result = ShowTablet.Result()
