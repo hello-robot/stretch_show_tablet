@@ -5,4 +5,4 @@ int32 request
 int32 result
 ---
 # Feedback
-int32 feedback
+int32 current_state
