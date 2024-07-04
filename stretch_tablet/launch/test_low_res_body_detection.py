@@ -19,7 +19,8 @@ def generate_launch_description():
         PythonLaunchDescriptionSource([os.path.join(
             stretch_core_path, 'launch'),
             '/stretch_realsense.launch.py']),
-        launch_arguments={"resolution": "low"}.items()
+            launch_arguments={"resolution": "low",
+                "depth_module_exposure": '4500'}.items()
         )
 
     detect_body_landmarks = Node(
@@ -27,19 +28,7 @@ def generate_launch_description():
         executable='detect_body_landmarks',
         output='screen',
         )
-
-    detect_faces = Node(
-        package='stretch_tablet',
-        executable='detect_faces',
-        output='screen',
-        )
     
-    show_tablet = Node(
-        package='stretch_tablet',
-        executable='show_tablet_test',
-        output='screen'
-    )
-
     rviz_config_path = os.path.join(stretch_deep_perception_path, 'rviz', 'body_landmark_detection.rviz')
 
     rviz_node = Node(
@@ -53,7 +42,5 @@ def generate_launch_description():
         stretch_driver,
         d435i_launch,
         detect_body_landmarks,
-        detect_faces,
-        show_tablet,
-        # rviz_node,  # uncomment if not running headless
+        rviz_node,  # uncomment if not running headless
         ])
