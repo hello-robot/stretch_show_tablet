@@ -17,6 +17,7 @@ from stretch_tablet.planner import TabletPlanner
 from stretch_tablet.utils import load_bad_json_data
 
 from stretch_tablet_interfaces.srv import PlanTabletPose
+from stretch_tablet.utils_ros import generate_pose_stamped
 
 class ShowTabletNode(Node):
     def __init__(self):
@@ -88,21 +89,8 @@ class ShowTabletNode(Node):
     def go_to_pose(self, pose):
         pass
 
-    def generate_pose_stamped(self, position, orientation):
-        pose_stamped = PoseStamped()
-        point = Point()
-        point.x = position[0]
-        point.y = position[1]
-        point.z = position[2]
-        quat = Quaternion()
-        quat.x = orientation[0]
-        quat.y = orientation[1]
-        quat.z = orientation[2]
-        quat.w = orientation[3]
-        pose_stamped.pose.position = point
-        pose_stamped.pose.orientation = quat
-        pose_stamped.header.stamp = self.get_clock().now().to_msg()
-        return pose_stamped
+    def now(self):
+        return self.get_clock().now().to_msg()
 
     def build_tablet_pose_request(self):
         request = PlanTabletPose.Request()
@@ -116,8 +104,8 @@ class ShowTabletNode(Node):
 
         # construct request
         request.human_joint_dict = body_string
-        request.camera_pose = self.generate_pose_stamped(camera_position, camera_orientation)
-        request.robot_pose = self.generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.])
+        request.camera_pose = generate_pose_stamped(camera_position, camera_orientation, self.now())
+        request.robot_pose = generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.], self.now())
 
         return request
 
@@ -162,15 +150,16 @@ class ShowTabletNode(Node):
                                     'Service call failed %r' % (e,))
                             break
 
-                    # update ik
-                    ik_soln = {key: value for key, value in zip(response.robot_ik_joint_names, response.robot_ik_joint_positions)}
-                    msg = String()
-                    msg.data = json.dumps(ik_soln)
-                    self.get_logger().info("publishing " + msg.data)
-                    self.pub_tablet_goal.publish(msg)
-                    
-                    # debug
-                    self.get_logger().info("Plan Time: " + str(response.plan_time_s))
+                    if response.success:
+                        # update ik
+                        ik_soln = {key: value for key, value in zip(response.robot_ik_joint_names, response.robot_ik_joint_positions)}
+                        msg = String()
+                        msg.data = json.dumps(ik_soln)
+                        self.get_logger().info("publishing " + msg.data)
+                        self.pub_tablet_goal.publish(msg)
+                        
+                        # debug
+                        self.get_logger().info("Plan Time: " + str(response.plan_time_s))
 
                     # clear buffer
                     self.human.pose_estimate.clear_estimates()

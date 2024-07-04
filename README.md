@@ -27,7 +27,6 @@ There are some hardcoded paths in here that might need to be changed...
 First, position the robot's with the arm pointing towards you and the robot's head facing you. Then, run in three terminals:
 
 ```
-ros2 run stretch_tablet plan_tablet_pose_service 
 ros2 launch show_tablet_test_launch.py
 ros2 run stretch_tablet stretch_main
 ```

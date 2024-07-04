@@ -39,6 +39,12 @@ def generate_launch_description():
         output='screen'
     )
 
+    planner_service = Node(
+        package='stretch_tablet',
+        executable='plan_tablet_pose_service',
+        output='screen'
+    )
+
     rviz_config_path = os.path.join(stretch_deep_perception_path, 'rviz', 'body_landmark_detection.rviz')
 
     rviz_node = Node(
@@ -54,5 +60,6 @@ def generate_launch_description():
         detect_body_landmarks,
         detect_faces,
         show_tablet,
+        planner_service,
         # rviz_node,  # uncomment if not running headless
         ])
