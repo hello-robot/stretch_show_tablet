@@ -90,11 +90,14 @@ class EstimatePoseActionServer(Node):
         self.goal_handle = goal_handle
         n_samples = goal_handle.request.number_of_samples
 
-        # init result
+        # ROS Action stuff
         result = EstimateHumanPose.Result()
+        feedback = EstimateHumanPose.Feedback()
         
-        pose_estimate = self.observe_human(n=n_samples)
+        pose_estimate = self.observe_human(n_samples=n_samples, goal_handle=goal_handle)
         if pose_estimate.body_estimate is not None and len([k for k in pose_estimate.body_estimate.keys()]) > 0:
+            feedback.current_state = EstimatePoseState.DONE.value
+            goal_handle.publish_feedback(feedback)
             goal_handle.succeed()
         else:
             goal_handle.abort()
@@ -112,14 +115,21 @@ class EstimatePoseActionServer(Node):
     def clear_last_pose_estimate(self):
         self._latest_human_pose_estimate.clear_estimates()
 
-    def observe_human(self, n: int=1) -> HumanPoseEstimate:
+    def observe_human(self, n_samples: int=1, goal_handle:ServerGoalHandle=None) -> HumanPoseEstimate:
         """
         Args:
-            n (int): number of samples to average
+            n_samples (int): number of samples to average
 
         Returns:
             Human with populated pose estimate
         """
+        if goal_handle is None:
+            raise ValueError
+        
+        # ROS Action stuff
+        feedback = EstimateHumanPose.Feedback()
+        feedback.current_state = EstimatePoseState.ESTIMATE.value
+
         necessary_keys = [
             "nose",
             "neck",
@@ -130,9 +140,11 @@ class EstimatePoseActionServer(Node):
         # loop inits
         rate = self.create_rate(10.)
         i = 0
-        pose_estimates = [HumanPoseEstimate() for _ in range(n)]
+        pose_estimates = [HumanPoseEstimate() for _ in range(n_samples)]
 
-        while i < n:
+        while i < n_samples:
+            feedback.number_of_samples_read = i
+            goal_handle.publish_feedback(feedback)
             latest_pose = self.get_latest_human_pose_estimate(filter_bad_points=True)
 
             # check if human visible

@@ -111,12 +111,14 @@ class HumanPoseEstimate:
             unique_keys = unique_keys + [k for k in pose.keys()]
             unique_keys = list(set(unique_keys))
 
-        all_poses = {key: []for key in unique_keys}
+        # concatenate pose estimates into one dict
+        all_poses = {key: [] for key in unique_keys}
         for p in pose_estimates:
             pose = p.body_estimate
             for key in pose.keys():
                 all_poses[key].append(pose[key])
 
+        # average pose estimates
         average_pose_estimate_dict = {
             key: np.mean(all_poses[key], axis=0).tolist() for key in unique_keys
         }

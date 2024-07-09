@@ -12,3 +12,4 @@ string face_pose_estimate
 ---
 # Feedback
 int32 current_state
+int32 number_of_samples_read
