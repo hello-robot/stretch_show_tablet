@@ -3,6 +3,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.action.server import ServerGoalHandle
 
 from std_msgs.msg import String
 
@@ -62,11 +63,11 @@ class EstimatePoseActionServer(Node):
             return
         self._latest_human.pose_estimate.set_body_estimate(data)
 
-    def callback_action_cancel(self, goal_handle):
+    def callback_action_cancel(self, goal_handle: ServerGoalHandle):
         self.cleanup()
         return CancelResponse.ACCEPT
     
-    def execute_callback(self, goal_handle):
+    def execute_callback(self, goal_handle: ServerGoalHandle):
         self.get_logger().info('Executing Estimate Pose...')
         self.goal_handle = goal_handle
         n_samples = goal_handle.request.number_of_samples
@@ -75,6 +76,12 @@ class EstimatePoseActionServer(Node):
         result = EstimateHumanPose.Result()
         
         human = self.observe_human(n=n_samples)
+        if human.pose_estimate.body_estimate is not None and len([k for k in human.pose_estimate.body_estimate.keys()]) > 0:
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+            return result
+
         self.get_logger().info(str(json.dumps(human.pose_estimate.body_estimate)))
 
         result.body_pose_estimate = json.dumps(human.pose_estimate.body_estimate)
@@ -106,6 +113,7 @@ class EstimatePoseActionServer(Node):
             pose_keys = latest_human.pose_estimate.body_estimate.keys()
             for key in necessary_keys:
                 if key not in pose_keys:
+                    self.get_logger().info("cannot see key joints!")
                     continue
 
             # TODO: probabilistic version averaging
