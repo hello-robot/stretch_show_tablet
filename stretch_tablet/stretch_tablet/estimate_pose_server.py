@@ -67,11 +67,18 @@ class EstimatePoseActionServer(Node):
         return CancelResponse.ACCEPT
     
     def execute_callback(self, goal_handle):
-        self.get_logger().info('Executing Show Tablet...')
+        self.get_logger().info('Executing Estimate Pose...')
         self.goal_handle = goal_handle
+        n_samples = goal_handle.request.number_of_samples
+
+        # init result
+        result = EstimateHumanPose.Result()
         
-        human = self.observe_human()
+        human = self.observe_human(n=n_samples)
         self.get_logger().info(str(json.dumps(human.pose_estimate.body_estimate)))
+
+        result.body_pose_estimate = json.dumps(human.pose_estimate.body_estimate)
+        return result
 
     # helpers
     def cleanup(self):
