@@ -7,9 +7,7 @@ from rclpy.action.server import ServerGoalHandle
 
 from std_msgs.msg import String
 
-# import sophuspy as sp
-# import numpy as np
-# from scipy.spatial.transform import Rotation as R
+import numpy as np
 
 from stretch_tablet_interfaces.action import EstimateHumanPose
 
@@ -17,7 +15,7 @@ from enum import Enum
 import json
 
 from stretch_tablet.utils import load_bad_json_data
-from stretch_tablet.human import Human, HumanPoseEstimate
+from stretch_tablet.human import HumanPoseEstimate
 
 class EstimatePoseState(Enum):
     IDLE = 0
@@ -45,11 +43,31 @@ class EstimatePoseActionServer(Node):
             qos_profile=1
         )
 
-        self._latest_human = Human()
+        self._latest_human_pose_estimate = HumanPoseEstimate()
 
     # get / set
-    def get_latest_human(self):
-        return self._latest_human
+    def get_latest_human_pose_estimate(self, filter_bad_points: bool=False):
+        """
+        Args:
+            filter_bad_points (bool): whether to remove points without an
+            accurate depth measurement
+        """
+        latest_human = self._latest_human_pose_estimate
+
+        if latest_human is None or latest_human.body_estimate is None:
+            return latest_human
+
+        if filter_bad_points:
+            # remove points that are adjacent to the camera
+            filtered_human_estimate = {}
+            for k in latest_human.body_estimate.keys():
+                point = latest_human.body_estimate[k]
+                if np.linalg.norm(point) > 0.02:
+                    filtered_human_estimate[k] = point
+
+            latest_human.set_body_estimate(filtered_human_estimate)
+
+        return latest_human
 
     # callbacks
     def callback_body_landmarks(self, msg: String):
@@ -61,7 +79,7 @@ class EstimatePoseActionServer(Node):
 
         if data is None or data == "{}":
             return
-        self._latest_human.pose_estimate.set_body_estimate(data)
+        self._latest_human_pose_estimate.set_body_estimate(data)
 
     def callback_action_cancel(self, goal_handle: ServerGoalHandle):
         self.cleanup()
@@ -75,16 +93,16 @@ class EstimatePoseActionServer(Node):
         # init result
         result = EstimateHumanPose.Result()
         
-        human = self.observe_human(n=n_samples)
-        if human.pose_estimate.body_estimate is not None and len([k for k in human.pose_estimate.body_estimate.keys()]) > 0:
+        pose_estimate = self.observe_human(n=n_samples)
+        if pose_estimate.body_estimate is not None and len([k for k in pose_estimate.body_estimate.keys()]) > 0:
             goal_handle.succeed()
         else:
             goal_handle.abort()
             return result
 
-        self.get_logger().info(str(json.dumps(human.pose_estimate.body_estimate)))
+        self.get_logger().info(str(json.dumps(pose_estimate.body_estimate)))
 
-        result.body_pose_estimate = json.dumps(human.pose_estimate.body_estimate)
+        result.body_pose_estimate = json.dumps(pose_estimate.body_estimate)
         return result
 
     # helpers
@@ -92,9 +110,9 @@ class EstimatePoseActionServer(Node):
         pass
 
     def clear_last_pose_estimate(self):
-        self._latest_human.pose_estimate.clear_estimates()
+        self._latest_human_pose_estimate.clear_estimates()
 
-    def observe_human(self, n: int=1) -> Human:
+    def observe_human(self, n: int=1) -> HumanPoseEstimate:
         """
         Args:
             n (int): number of samples to average
@@ -102,7 +120,6 @@ class EstimatePoseActionServer(Node):
         Returns:
             Human with populated pose estimate
         """
-        human = Human()
         necessary_keys = [
             "nose",
             "neck",
@@ -116,15 +133,15 @@ class EstimatePoseActionServer(Node):
         pose_estimates = [HumanPoseEstimate() for _ in range(n)]
 
         while i < n:
-            latest_human = self.get_latest_human()
+            latest_pose = self.get_latest_human_pose_estimate(filter_bad_points=True)
 
             # check if human visible
-            if latest_human.pose_estimate.body_estimate is None:
+            if latest_pose.body_estimate is None:
                 rate.sleep()
                 continue
 
             # get visible keypoints
-            pose_keys = latest_human.pose_estimate.body_estimate.keys()
+            pose_keys = latest_pose.body_estimate.keys()
 
             # check if necessary keys visible
             can_see = True
@@ -138,16 +155,14 @@ class EstimatePoseActionServer(Node):
                 rate.sleep()
                 continue
 
-            pose_estimates[i].set_body_estimate(latest_human.pose_estimate.body_estimate)
+            pose_estimates[i].set_body_estimate(latest_pose.body_estimate)
             self.clear_last_pose_estimate()
             i = i + 1
             rate.sleep()
 
         # compute average estimate
         average_pose_estimate = HumanPoseEstimate.average_pose_estimates(pose_estimates)
-        
-        human.pose_estimate = average_pose_estimate
-        return human
+        return average_pose_estimate
 
     # main
     def main(self):
