@@ -17,7 +17,7 @@ from enum import Enum
 import json
 
 from stretch_tablet.utils import load_bad_json_data
-from stretch_tablet.human import Human
+from stretch_tablet.human import Human, HumanPoseEstimate
 
 class EstimatePoseState(Enum):
     IDLE = 0
@@ -94,7 +94,14 @@ class EstimatePoseActionServer(Node):
     def clear_last_pose_estimate(self):
         self._latest_human.pose_estimate.clear_estimates()
 
-    def observe_human(self, n=1):
+    def observe_human(self, n: int=1) -> Human:
+        """
+        Args:
+            n (int): number of samples to average
+
+        Returns:
+            Human with populated pose estimate
+        """
         human = Human()
         necessary_keys = [
             "nose",
@@ -103,24 +110,43 @@ class EstimatePoseActionServer(Node):
             "left_shoulder"
         ]
 
+        # loop inits
+        rate = self.create_rate(10.)
         i = 0
+        pose_estimates = [HumanPoseEstimate() for _ in range(n)]
+
         while i < n:
             latest_human = self.get_latest_human()
+
+            # check if human visible
             if latest_human.pose_estimate.body_estimate is None:
+                rate.sleep()
                 continue
 
-            # check keys
+            # get visible keypoints
             pose_keys = latest_human.pose_estimate.body_estimate.keys()
+
+            # check if necessary keys visible
+            can_see = True
             for key in necessary_keys:
                 if key not in pose_keys:
                     self.get_logger().info("cannot see key joints!")
+                    can_see = False
                     continue
+            
+            if not can_see:
+                rate.sleep()
+                continue
 
-            # TODO: probabilistic version averaging
-            human.pose_estimate.set_body_estimate(latest_human.pose_estimate.body_estimate)
+            pose_estimates[i].set_body_estimate(latest_human.pose_estimate.body_estimate)
             self.clear_last_pose_estimate()
             i = i + 1
+            rate.sleep()
 
+        # compute average estimate
+        average_pose_estimate = HumanPoseEstimate.average_pose_estimates(pose_estimates)
+        
+        human.pose_estimate = average_pose_estimate
         return human
 
     # main

@@ -49,7 +49,7 @@ class HumanPoseEstimate:
 
         print("Cannot see: " + str(not_visible))
 
-    def set_body_estimate(self, data):
+    def set_body_estimate(self, data: dict):
         self.body_estimate = data
         self.body_points = np.array([v for v in data.values()]).T
 
@@ -101,6 +101,30 @@ class HumanPoseEstimate:
         
         world_points = sp.transform_points_by_poses(self.world2camera_pose.matrix3x4().ravel(), self.body_points.T).T
         return world_points
+    
+    @staticmethod
+    def average_pose_estimates(pose_estimates: list):
+        # get pose keys
+        unique_keys = []
+        for p in pose_estimates:
+            pose = p.body_estimate
+            unique_keys = unique_keys + [k for k in pose.keys()]
+            unique_keys = list(set(unique_keys))
+
+        all_poses = {key: []for key in unique_keys}
+        for p in pose_estimates:
+            pose = p.body_estimate
+            for key in pose.keys():
+                all_poses[key].append(pose[key])
+
+        average_pose_estimate_dict = {
+            key: np.mean(all_poses[key], axis=0).tolist() for key in unique_keys
+        }
+
+        average_pose_estimate = HumanPoseEstimate()
+        average_pose_estimate.set_body_estimate(average_pose_estimate_dict)
+
+        return average_pose_estimate
 
 class Human:
     def __init__(self) -> None:
