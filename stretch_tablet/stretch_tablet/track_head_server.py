@@ -7,9 +7,7 @@ from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.task import Future
-from ament_index_python import get_package_share_directory
 
-import tf2_ros
 
 from std_msgs.msg import String, Bool
 from control_msgs.action import FollowJointTrajectory
@@ -21,13 +19,8 @@ from stretch_tablet_interfaces.action import TrackHead
 from stretch_tablet.human import HumanPoseEstimate
 from stretch_tablet.utils import load_bad_json_data
 from stretch_tablet.control import TabletController
-import json
-import os
 
-from typing import Optional, Tuple
 from enum import Enum
-
-# from stretch_tablet.stretch_ik_control import StretchIKControl
 
 def in_range(value, range):
     return True if value >= range[0] and value <= range[1] else False
@@ -49,6 +42,9 @@ class HeadTrackerServer(Node):
             self.execute_callback,
             callback_group=ReentrantCallbackGroup(),
             cancel_callback=self.callback_action_cancel)
+
+        # pub
+        # TODO: publish toggles for the face tracker
 
         # sub
         self.sub_face_landmarks = self.create_subscription(
@@ -111,6 +107,8 @@ class HeadTrackerServer(Node):
         if self._pose_estimate.face_estimate is None:
             return HeadTrackerState.IDLE
         
+        # TODO: check if cannot_see_head
+
         try:
             wrist_yaw_angle = self._joint_state.position[self._joint_state.name.index("joint_wrist_yaw")]
         except ValueError as e:
@@ -122,10 +120,11 @@ class HeadTrackerServer(Node):
         return HeadTrackerState.TRACKING
     
     def state_cannot_see_head(self):
+        # TODO: populate
         return HeadTrackerState.CANNOT_SEE
 
     def state_done(self):
-        self.__command_move_wrist(0.)
+        self.__command_move_wrist(0., move_time_s=2.)
         return HeadTrackerState.DONE
 
     def run_state_machine(self, goal_handle: ServerGoalHandle):
@@ -162,23 +161,26 @@ class HeadTrackerServer(Node):
         return self.run_state_machine(goal_handle)
 
     # helpers
-    def __command_move_wrist(self, yaw_position) -> Future:
+    def __command_move_wrist(self, yaw_position, move_time_s: float=1.) -> Future:
         # Create the goal
         wrist_goal = FollowJointTrajectory.Goal()
 
         # joint info
         wrist_goal.trajectory.joint_names = ["joint_wrist_yaw"]
 
-        # 
+        # populate positions and times
         wrist_goal.trajectory.points = [JointTrajectoryPoint()]
         wrist_goal.trajectory.points[0].positions = [yaw_position]
         wrist_goal.trajectory.points[0].time_from_start = Duration(
-            seconds=1.,
+            seconds=move_time_s,
         ).to_msg()
 
         return self.arm_client.send_goal_async(wrist_goal)
 
     def print(self, msg):
+        """
+        helper to reduce keystrokes required to debug print to terminal >:(
+        """
         if self.debug:
             self.get_logger().info(str(msg))
 
