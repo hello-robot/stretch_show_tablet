@@ -1,6 +1,6 @@
 import numpy as np
 
-from stretch_tablet.human import Human
+from stretch_tablet.human import Human, HumanPoseEstimate
 from stretch_tablet.utils import Direction, in_range, get_vector_direction_image_plane
     
 class TabletController:
@@ -41,4 +41,10 @@ class TabletController:
         
         Kp = 0.2
         yaw_action = Kp * (-1 * x)
+        return yaw_action
+    
+    def get_tablet_yaw_from_head_pose(self, pose_estimate: HumanPoseEstimate):
+        human = Human()
+        human.pose_estimate = pose_estimate
+        yaw_action = self.get_tablet_yaw_action(human)
         return yaw_action

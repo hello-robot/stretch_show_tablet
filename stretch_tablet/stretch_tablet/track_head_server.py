@@ -14,6 +14,7 @@ import tf2_ros
 from std_msgs.msg import String, Bool
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
+from sensor_msgs.msg import JointState
 
 from stretch_tablet_interfaces.action import TrackHead
 
@@ -49,13 +50,6 @@ class HeadTrackerServer(Node):
             callback_group=ReentrantCallbackGroup(),
             cancel_callback=self.callback_action_cancel)
 
-        # pub
-        self.pub_tablet_move_by = self.create_publisher(
-            String,
-            "/stretch_tablet/move_by",
-            qos_profile=1
-        )
-
         # sub
         self.sub_face_landmarks = self.create_subscription(
             String,
@@ -64,8 +58,18 @@ class HeadTrackerServer(Node):
             qos_profile=1
         )
 
+        self.sub_joint_state = self.create_subscription(
+            JointState,
+            "/joint_states",
+            callback=self.callback_joint_state,
+            qos_profile=1
+        )
+
         # state
         self._pose_estimate = HumanPoseEstimate()
+        self._joint_state = JointState()
+        self._exit = False
+
         self.controller = TabletController()
 
         # simpler web teleop
@@ -76,36 +80,12 @@ class HeadTrackerServer(Node):
             callback_group=MutuallyExclusiveCallbackGroup(),
         )
 
-        # # web teleop stuff
-        # tf_timeout_secs = 0.5
-
-        # # Initialize TF2
-        # self.tf_timeout = Duration(seconds=tf_timeout_secs)
-        # self.tf_buffer = tf2_ros.Buffer()
-        # self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-        # self.static_transform_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
-        # self.lift_offset: Optional[Tuple[float, float]] = None
-        # self.wrist_offset: Optional[Tuple[float, float]] = None
-
-        # # Create the inverse jacobian controller to execute motions
-        # urdf_abs_path = os.path.join(
-        #     get_package_share_directory("stretch_web_teleop"),
-        #     "urdf/stretch_base_rotation_ik.urdf",
-        # )
-
-        # self.ik_control = StretchIKControl(
-        #     self,
-        #     tf_buffer=self.tf_buffer,
-        #     urdf_path=urdf_abs_path,
-        #     static_transform_broadcaster=self.static_transform_broadcaster,
-        # )
-
-        # config
         self.debug = False
 
     # callbacks
     def callback_action_cancel(self, goal_handle: ServerGoalHandle):
-        pass
+        self._exit = True
+        return CancelResponse.ACCEPT
     
     def callback_face_landmarks(self, msg):        
         msg_data = msg.data.replace("\"", "")
@@ -120,23 +100,26 @@ class HeadTrackerServer(Node):
         # update human estimate
         self._pose_estimate.set_face_estimate(data)
 
-        # compute yaw action and  send command
-        # yaw_action = self.controller.get_tablet_yaw_action(self.human)
-        # move_msg = String()
-        # move_msg.data = str(json.dumps({'joint_wrist_yaw': yaw_action}))
-        # self.pub_tablet_move_by.publish(move_msg)
-
-        # # debug
-        # self.print(str(yaw_action))
-        # self.print(str(self.controller.get_head_vertical_vector(self.human)))
-        # self.print(str(self.controller.get_head_direction(self.human)))
+    def callback_joint_state(self, msg: JointState):
+        self._joint_state = msg
 
     # state machine
     def state_idle(self):
         return HeadTrackerState.TRACKING
     
     def state_track_head(self):
-        return HeadTrackerState.DONE
+        if self._pose_estimate.face_estimate is None:
+            return HeadTrackerState.IDLE
+        
+        try:
+            wrist_yaw_angle = self._joint_state.position[self._joint_state.name.index("joint_wrist_yaw")]
+        except ValueError as e:
+            self.get_logger().error(str(e))
+            wrist_yaw_angle = 0.
+
+        wrist_delta = self.controller.get_tablet_yaw_from_head_pose(self._pose_estimate)
+        self.__command_move_wrist(wrist_yaw_angle + wrist_delta)
+        return HeadTrackerState.TRACKING
     
     def state_cannot_see_head(self):
         return HeadTrackerState.CANNOT_SEE
@@ -146,27 +129,31 @@ class HeadTrackerServer(Node):
         return HeadTrackerState.DONE
 
     def run_state_machine(self, goal_handle: ServerGoalHandle):
-        state = HeadTrackerState.IDLE
+        self.state = HeadTrackerState.IDLE
         feedback = TrackHead.Feedback()
         result = TrackHead.Result()
         rate = self.create_rate(1.)
 
         while rclpy.ok():
-            feedback.status = state.value
+            if self._exit:
+                self.state = HeadTrackerState.DONE
+
+            feedback.status = self.state.value
             goal_handle.publish_feedback(feedback)
-            if state == HeadTrackerState.IDLE:
-                state = self.state_idle()
-            elif state == HeadTrackerState.TRACKING:
-                state = self.state_track_head()
-            elif state == HeadTrackerState.CANNOT_SEE:
-                state = self.state_cannot_see_head()
-            elif state == HeadTrackerState.DONE:
-                state = self.state_done()
+            if self.state == HeadTrackerState.IDLE:
+                new_state = self.state_idle()
+            elif self.state == HeadTrackerState.TRACKING:
+                new_state = self.state_track_head()
+            elif self.state == HeadTrackerState.CANNOT_SEE:
+                new_state = self.state_cannot_see_head()
+            elif self.state == HeadTrackerState.DONE:
+                new_state = self.state_done()
                 goal_handle.succeed()
                 break
             else:
-                state = HeadTrackerState.IDLE
+                self.state = HeadTrackerState.IDLE
 
+            self.state = new_state
             rate.sleep()
 
         return result
