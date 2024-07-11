@@ -130,7 +130,8 @@ class ToggleableDetectionNode(DetectionNode):
             depth_topic = topic_prefix + 'aligned_depth_to_color/image_raw'
         elif camera == Camera.GRIPPER:
             topic_prefix = '/gripper_camera/'
-            rgb_topic = topic_prefix + 'color/image_rect_raw'
+            # rgb_topic = topic_prefix + 'color/image_rect_raw'
+            rgb_topic = topic_prefix + 'image_raw'
             depth_topic = topic_prefix + 'aligned_depth_to_color/image_raw'
         else:
             raise ValueError

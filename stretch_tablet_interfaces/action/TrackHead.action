@@ -1,0 +1,12 @@
+# Request
+int32 unused
+---
+# Result
+int32 STATUS_SUCCESS = 0
+int32 STATUS_CANCELED = 1
+int32 STATUS_ERROR = 2
+
+int32 unused
+---
+# Feedback
+int32 status
