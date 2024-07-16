@@ -1,17 +1,21 @@
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse, ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 from std_msgs.msg import String
+from control_msgs.action import FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
 
 import sophuspy as sp
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from stretch_tablet_interfaces.srv import PlanTabletPose
-from stretch_tablet_interfaces.action import ShowTablet, TrackHead
+from stretch_tablet_interfaces.action import ShowTablet
 
 from enum import Enum
 import json
@@ -23,6 +27,31 @@ from stretch_tablet.human import Human
 # testing
 import time
 
+# helpers
+PI_2 = np.pi/2.
+
+def enforce_limits(value, min_value, max_value):
+    return min([max([min_value, value]), max_value])
+
+def enforce_joint_limits(pose: dict) -> dict:
+    pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
+    pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
+    pose["yaw"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
+    pose["pitch"] = enforce_limits(pose["pitch"], -PI_2, PI_2)
+    pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
+
+    return pose
+
+JOINT_NAME_SHORT_TO_FULL = {
+    "base": "rotate_mobile_base",
+    "lift": "joint_lift",
+    "arm_extension": "wrist_extension",
+    "yaw": "joint_wrist_yaw",
+    "pitch": "joint_wrist_pitch",
+    "roll": "joint_wrist_roll",
+}
+
+# classes
 class ShowTabletState(Enum):
     IDLE = 0
     PLAN_TABLET_POSE = 1
@@ -49,9 +78,12 @@ class ShowTabletActionServer(Node):
         self.srv_plan_tablet_pose = self.create_client(
             PlanTabletPose, 'plan_tablet_pose')
         
-        # action
-        self.act_track_head = ActionClient(
-            self, TrackHead, "track_head"
+        # motion
+        self.arm_client = ActionClient(
+            self,
+            FollowJointTrajectory,
+            "/stretch_controller/follow_joint_trajectory",
+            callback_group=MutuallyExclusiveCallbackGroup(),
         )
         
         # state
@@ -60,17 +92,23 @@ class ShowTabletActionServer(Node):
         self.human = Human()
         self.abort = False
         self.result = ShowTablet.Result()
-        self._feedback_track_head = None
+        self._robot_joint_trajectory = None
+
+        # config
+        self._robot_move_time_s = 4.
 
     # helpers
-    def clear_landmarks(self):
-        self.human.pose_estimate.clear_estimates()
+    # def clear_landmarks(self):
+    #     self.human.pose_estimate.clear_estimates()
+
+    def now(self):
+        return self.get_clock().now().to_msg()
 
     def build_tablet_pose_request(self):
         request = PlanTabletPose.Request()
         human = self.human
 
-        if not self.human.pose_estimate.is_populated():
+        if not self.human.pose_estimate.is_body_populated():
             self.get_logger().error("ShowTabletActionServer::build_tablet_pose_request: self.human empty!")
             return request
 
@@ -124,9 +162,6 @@ class ShowTabletActionServer(Node):
     #     self.result.status = ShowTablet.Result.STATUS_ERROR
     #     return ShowTablet.Result()
 
-    def callback_track_head_feedback(self, feedback: TrackHead.Feedback):
-        self._feedback_track_head = feedback
-
     # states
     def state_idle(self):
         if self.abort or self.goal_handle.is_cancel_requested:
@@ -135,8 +170,7 @@ class ShowTabletActionServer(Node):
         if False:
             return ShowTabletState.IDLE
         
-        # return ShowTabletState.LOOK_AT_HUMAN
-        return ShowTabletState.IDLE
+        return ShowTabletState.PLAN_TABLET_POSE
 
     def state_plan_tablet_pose(self):
         if self.abort or self.goal_handle.is_cancel_requested:
@@ -146,10 +180,38 @@ class ShowTabletActionServer(Node):
             # Human not seen
             # return ShowTabletState.LOOK_AT_HUMAN
         
-        # plan_request = self.build_tablet_pose_request()
-        # future = self.srv_plan_tablet_pose.call_async(plan_request)
+        plan_request = self.build_tablet_pose_request()
+        future = self.srv_plan_tablet_pose.call_async(plan_request)
 
-        return ShowTabletState.NAVIGATE_BASE
+        # wait for srv to finish
+        while rclpy.ok():
+            rclpy.spin_once(self)
+            if future.done():
+                try:
+                    response = future.result()
+                except Exception as e:
+                    self.get_logger().info(
+                        'Service call failed %r' % (e,))
+                break
+        
+        robot_joint_trajectory = FollowJointTrajectory.Goal()
+
+        if response.success:
+            # update ik
+            joint_names = response.robot_ik_joint_names[1:]
+            joint_positions = response.robot_ik_joint_positions[1:]
+            robot_joint_trajectory.trajectory.joint_names = [JOINT_NAME_SHORT_TO_FULL[j] for j in joint_names]
+            robot_joint_trajectory.trajectory.points = [JointTrajectoryPoint()]
+            robot_joint_trajectory.trajectory.points[0].positions = [p for p in joint_positions]
+            robot_joint_trajectory.trajectory.points[0].time_from_start = Duration(seconds=self._robot_move_time_s).to_msg()
+            self._robot_joint_trajectory = robot_joint_trajectory
+
+            # debug
+            self.get_logger().info(str(response.robot_ik_joint_names))
+            self.get_logger().info(str(response.robot_ik_joint_positions))
+
+        # return ShowTabletState.NAVIGATE_BASE
+        return ShowTabletState.MOVE_ARM_TO_TABLET_POSE
 
     def state_navigate_base(self):
         if self.abort or self.goal_handle.is_cancel_requested:
@@ -164,31 +226,41 @@ class ShowTabletActionServer(Node):
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
 
-        return ShowTabletState.TRACK_FACE
+        trajectory = self._robot_joint_trajectory
+        future = self.arm_client.send_goal_async(trajectory)
 
-    def state_track_face(self):
-        if self.abort or self.goal_handle.is_cancel_requested:
-            return ShowTabletState.ABORT
+        # rate = self.create_rate(10.)
+        # while rclpy.ok():
+        #     rclpy.spin_once(self)
+        #     if future.done():
+        #         break
+        #     rate.sleep()
 
-        # launch face tracker
-        request = TrackHead.Goal()
-        future = self.act_track_head.send_goal_async(request, feedback_callback=self.callback_track_head_feedback)
+        return ShowTabletState.EXIT
 
-        # loop
-        rate = self.create_rate(10.)
-        feedback_track_head = TrackHead.Feedback()
-        feedback_show_tablet = ShowTablet.Feedback()
-        while rclpy.ok():
-            if future.done():
-                break
+    # def state_track_face(self):
+    #     if self.abort or self.goal_handle.is_cancel_requested:
+    #         return ShowTabletState.ABORT
 
-            # TODO: check self._feedback_track_head
+    #     # launch face tracker
+    #     request = TrackHead.Goal()
+    #     future = self.act_track_head.send_goal_async(request, feedback_callback=self.callback_track_head_feedback)
 
-            feedback_show_tablet.status = ShowTabletState.TRACK_FACE.value
-            self.goal_handle.publish_feedback(feedback_show_tablet)
-            rate.sleep()
+    #     # loop
+    #     rate = self.create_rate(10.)
+    #     feedback_track_head = TrackHead.Feedback()
+    #     feedback_show_tablet = ShowTablet.Feedback()
+    #     while rclpy.ok():
+    #         if future.done():
+    #             break
 
-        return ShowTabletState.END_INTERACTION
+    #         # TODO: check self._feedback_track_head
+
+    #         feedback_show_tablet.status = ShowTabletState.TRACK_FACE.value
+    #         self.goal_handle.publish_feedback(feedback_show_tablet)
+    #         rate.sleep()
+
+    #     return ShowTabletState.END_INTERACTION
 
     def state_end_interaction(self):
         if self.abort or self.goal_handle.is_cancel_requested:
@@ -218,12 +290,12 @@ class ShowTabletActionServer(Node):
                 state = self.state_idle()
             elif state == ShowTabletState.PLAN_TABLET_POSE:
                 state = self.state_plan_tablet_pose()
-            elif state == ShowTabletState.NAVIGATE_BASE:
-                state = self.state_navigate_base()
+            # elif state == ShowTabletState.NAVIGATE_BASE:
+            #     state = self.state_navigate_base()
             elif state == ShowTabletState.MOVE_ARM_TO_TABLET_POSE:
                 state = self.state_move_arm_to_tablet_pose()
-            elif state == ShowTabletState.TRACK_FACE:
-                state = self.state_track_face()
+            # elif state == ShowTabletState.TRACK_FACE:
+            #     state = self.state_track_face()
             elif state == ShowTabletState.END_INTERACTION:
                 state = self.state_end_interaction()
             elif state == ShowTabletState.EXIT:
@@ -242,6 +314,10 @@ class ShowTabletActionServer(Node):
     def execute_callback(self, goal_handle):
         self.get_logger().info('Executing Show Tablet...')
         self.goal_handle = goal_handle
+
+        # load body pose
+        pose_estimate = load_bad_json_data(goal_handle.request.human_joint_dict)
+        self.human.pose_estimate.set_body_estimate(pose_estimate)
         
         final_result = self.run_state_machine(test=True)
 

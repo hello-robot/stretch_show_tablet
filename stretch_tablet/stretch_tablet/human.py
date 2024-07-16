@@ -78,9 +78,14 @@ class HumanPoseEstimate:
         self.face_estimate = None
         self.face_points = None
 
+    def is_body_populated(self):
+        return True if self.body_estimate is not None and self.body_points is not None else False
+    
+    def is_face_populated(self):
+        return True if self.face_estimate is not None and self.face_points is not None else False
+
     def is_populated(self):
-        return True if self.body_estimate is not None and self.body_points is not None \
-            and self.face_estimate is not None and self.face_points is not None else False
+        self.is_body_populated() and self.is_face_populated()
 
     def get_point_world(self, point):
         point = np.array(point).T

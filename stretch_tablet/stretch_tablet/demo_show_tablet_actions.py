@@ -85,10 +85,10 @@ class DemoShowTablet(Node):
     def state_idle(self) -> DemoState:
         print(" ")
         print("=" * 5 + " Main Menu " + 5 * "=")
-        print("(Y) Show tablet    (Q) Quit")
+        print("(E) Estimate Pose    (Q) Quit")
         ui = input("Selection:").lower()
         
-        if ui == 'y':
+        if ui == 'e':
             return DemoState.ESTIMATE_POSE
         elif ui == 'q':
             return DemoState.EXIT
@@ -112,8 +112,24 @@ class DemoShowTablet(Node):
         
         self._body_pose_estimate = body_pose
 
-        # return DemoState.SHOW_TABLET
-        return DemoState.TRACK_HEAD
+        # UI Pause
+        while rclpy.ok():
+            print(" ")
+            print("=" * 5 + " Pose Estimate Menu " + 5 * "=")
+            print("(E) Estimate Pose    (S) Show tablet")
+            print("(T) Track Head       (Q) Quit")
+            ui = input("Selection:").lower()
+            
+            if ui == 'e':
+                return DemoState.ESTIMATE_POSE
+            elif ui == 's':
+                return DemoState.SHOW_TABLET
+            elif ui == 't':
+                return DemoState.TRACK_HEAD
+            elif ui == 'q':
+                return DemoState.EXIT
+
+        return DemoState.EXIT
 
     def state_show_tablet(self) -> DemoState:
         if self._body_pose_estimate is None:
