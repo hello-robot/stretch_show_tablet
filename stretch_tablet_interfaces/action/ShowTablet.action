@@ -1,0 +1,13 @@
+# Request
+string human_joint_dict
+---
+# Result
+int32 STATUS_SUCCESS = 0
+int32 STATUS_CANCELED = 1
+int32 STATUS_ERROR = 2
+
+int32 status
+int32 result
+---
+# Feedback
+int32 current_state
