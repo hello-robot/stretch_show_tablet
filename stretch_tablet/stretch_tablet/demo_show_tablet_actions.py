@@ -99,10 +99,9 @@ class DemoShowTablet(Node):
         # build request
         request = EstimateHumanPose.Goal()
         request.number_of_samples = 10
-        rate = self.create_rate(self._wait_rate_hz)
 
         # get result
-        result = run_action(self.act_estimate_pose, request, rate, feedback_callback=self.callback_estimate_pose_feedback)
+        result = run_action(self.act_estimate_pose, request, self.rate, feedback_callback=self.callback_estimate_pose_feedback)
         body_pose = load_bad_json_data(result.body_pose_estimate)
 
         # Try again if body pose isn't populated (pose estimator failed)
@@ -139,18 +138,16 @@ class DemoShowTablet(Node):
         # send request
         request = ShowTablet.Goal()
         request.human_joint_dict = json.dumps(self._body_pose_estimate)
-        rate = self.create_rate(self._wait_rate_hz)
-
-        result = run_action(self.act_show_tablet, request, rate, feedback_callback=self.callback_show_tablet_feedback)
+        
+        result = run_action(self.act_show_tablet, request, self.rate, feedback_callback=self.callback_show_tablet_feedback)
 
         return DemoState.TRACK_HEAD
 
     def state_track_head(self) -> DemoState:
         # send request
         request = TrackHead.Goal()
-        rate = self.create_rate(self._wait_rate_hz)
 
-        result = run_action(self.act_track_head, request, rate, feedback_callback=self.callback_track_head_feedback)
+        result = run_action(self.act_track_head, request, self.rate, feedback_callback=self.callback_track_head_feedback)
 
         return DemoState.EXIT
 
@@ -161,7 +158,7 @@ class DemoShowTablet(Node):
     def main(self):
         state = DemoState.IDLE
 
-        rate = self.create_rate(self._wait_rate_hz)
+        self.rate = self.create_rate(self._wait_rate_hz)
 
         while rclpy.ok():
             self.get_logger().info("Current State: " + str(state))
@@ -179,7 +176,7 @@ class DemoShowTablet(Node):
             else:
                 state = DemoState.IDLE
 
-            rate.sleep()
+            self.rate.sleep()
         
         self.get_logger().info("DemoShowTablet: Done.")
 
