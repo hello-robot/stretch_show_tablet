@@ -112,7 +112,8 @@ class DemoShowTablet(Node):
         
         self._body_pose_estimate = body_pose
 
-        return DemoState.SHOW_TABLET
+        # return DemoState.SHOW_TABLET
+        return DemoState.TRACK_HEAD
 
     def state_show_tablet(self) -> DemoState:
         if self._body_pose_estimate is None:
@@ -122,32 +123,18 @@ class DemoShowTablet(Node):
         # send request
         request = ShowTablet.Goal()
         request.human_joint_dict = json.dumps(self._body_pose_estimate)
-        future = self.act_show_tablet.send_goal_async(request, feedback_callback=self.callback_show_tablet_feedback)
-
-        # wait for result
         rate = self.create_rate(self._wait_rate_hz)
-        while rclpy.ok():
-            if future.done():
-                break
 
-            self.get_logger().info(str(self._feedback_show_tablet.current_state))
-            rate.sleep()
-
-        # TODO: check if success
+        result = run_action(self.act_show_tablet, request, rate, feedback_callback=self.callback_show_tablet_feedback)
 
         return DemoState.TRACK_HEAD
 
     def state_track_head(self) -> DemoState:
         # send request
         request = TrackHead.Goal()
-        future = self.act_track_head.send_goal_async(request)
-
-        # wait for result
         rate = self.create_rate(self._wait_rate_hz)
-        while rclpy.ok():
-            if future.done():
-                break
-            rate.sleep()
+
+        result = run_action(self.act_track_head, request, rate, feedback_callback=self.callback_track_head_feedback)
 
         return DemoState.EXIT
 
@@ -161,6 +148,7 @@ class DemoShowTablet(Node):
         rate = self.create_rate(self._wait_rate_hz)
 
         while rclpy.ok():
+            self.get_logger().info("Current State: " + str(state))
             if state == DemoState.IDLE:
                 state = self.state_idle()
             elif state == DemoState.ESTIMATE_POSE:

@@ -134,6 +134,7 @@ class HeadTrackerServer(Node):
         rate = self.create_rate(1.)
 
         while rclpy.ok():
+            self.get_logger().info("Current State: " + str(self.state))
             if self._exit:
                 self.state = HeadTrackerState.DONE
 
@@ -158,6 +159,7 @@ class HeadTrackerServer(Node):
         return result
 
     def execute_callback(self, goal_handle: ServerGoalHandle):
+        self.get_logger().info('Executing Track Head...')
         return self.run_state_machine(goal_handle)
 
     # helpers

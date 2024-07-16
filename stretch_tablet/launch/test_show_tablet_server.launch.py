@@ -29,7 +29,7 @@ def generate_launch_description():
 
     detect_faces = Node(
         package='stretch_tablet',
-        executable='detect_faces',
+        executable='detect_faces_gripper',
         output='screen',
         )
     
