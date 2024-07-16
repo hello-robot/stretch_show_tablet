@@ -28,20 +28,6 @@ from stretch_tablet.human import Human
 import time
 
 # helpers
-PI_2 = np.pi/2.
-
-def enforce_limits(value, min_value, max_value):
-    return min([max([min_value, value]), max_value])
-
-def enforce_joint_limits(pose: dict) -> dict:
-    pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
-    pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
-    pose["yaw"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
-    pose["pitch"] = enforce_limits(pose["pitch"], -PI_2, PI_2)
-    pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
-
-    return pose
-
 JOINT_NAME_SHORT_TO_FULL = {
     "base": "rotate_mobile_base",
     "lift": "joint_lift",
@@ -51,14 +37,30 @@ JOINT_NAME_SHORT_TO_FULL = {
     "roll": "joint_wrist_roll",
 }
 
+JOINT_NAME_FULL_TO_SHORT = {v: k for k, v in JOINT_NAME_SHORT_TO_FULL.items()}
+
+PI_2 = np.pi/2.
+
+def enforce_limits(value, min_value, max_value):
+    return min([max([min_value, value]), max_value])
+
+def enforce_joint_limits(pose: dict) -> dict:
+    pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
+    pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
+    pose["yaw"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
+    pose["pitch"] = enforce_limits(pose["pitch"], -PI_2, 0.2)
+    # pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
+    pose["roll"] = 0.
+
+    return pose
+
 # classes
 class ShowTabletState(Enum):
     IDLE = 0
     PLAN_TABLET_POSE = 1
-    NAVIGATE_BASE = 2
+    NAVIGATE_BASE = 2  # not implemented yet
     MOVE_ARM_TO_TABLET_POSE = 3
-    TRACK_FACE = 4
-    END_INTERACTION = 5
+    END_INTERACTION = 4
     EXIT = 98
     ABORT = 99
     ERROR = -1
@@ -98,9 +100,6 @@ class ShowTabletActionServer(Node):
         self._robot_move_time_s = 4.
 
     # helpers
-    # def clear_landmarks(self):
-    #     self.human.pose_estimate.clear_estimates()
-
     def now(self):
         return self.get_clock().now().to_msg()
 
@@ -197,9 +196,18 @@ class ShowTabletActionServer(Node):
         robot_joint_trajectory = FollowJointTrajectory.Goal()
 
         if response.success:
-            # update ik
-            joint_names = response.robot_ik_joint_names[1:]
-            joint_positions = response.robot_ik_joint_positions[1:]
+            # get planner result
+            joint_names = response.robot_ik_joint_names
+            joint_positions = response.robot_ik_joint_positions
+            joint_dict = {n: p for n, p in zip(joint_names, joint_positions)}
+            joint_dict = enforce_joint_limits(joint_dict)
+            joint_positions = [v for v in joint_dict.values()]
+
+            # TEST: no base rotation...
+            joint_names = joint_names[1:]
+            joint_positions = joint_positions[1:]
+
+            # build message
             robot_joint_trajectory.trajectory.joint_names = [JOINT_NAME_SHORT_TO_FULL[j] for j in joint_names]
             robot_joint_trajectory.trajectory.points = [JointTrajectoryPoint()]
             robot_joint_trajectory.trajectory.points[0].positions = [p for p in joint_positions]
@@ -238,30 +246,6 @@ class ShowTabletActionServer(Node):
 
         return ShowTabletState.EXIT
 
-    # def state_track_face(self):
-    #     if self.abort or self.goal_handle.is_cancel_requested:
-    #         return ShowTabletState.ABORT
-
-    #     # launch face tracker
-    #     request = TrackHead.Goal()
-    #     future = self.act_track_head.send_goal_async(request, feedback_callback=self.callback_track_head_feedback)
-
-    #     # loop
-    #     rate = self.create_rate(10.)
-    #     feedback_track_head = TrackHead.Feedback()
-    #     feedback_show_tablet = ShowTablet.Feedback()
-    #     while rclpy.ok():
-    #         if future.done():
-    #             break
-
-    #         # TODO: check self._feedback_track_head
-
-    #         feedback_show_tablet.status = ShowTabletState.TRACK_FACE.value
-    #         self.goal_handle.publish_feedback(feedback_show_tablet)
-    #         rate.sleep()
-
-    #     return ShowTabletState.END_INTERACTION
-
     def state_end_interaction(self):
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
@@ -269,7 +253,7 @@ class ShowTabletActionServer(Node):
         return ShowTabletState.EXIT
     
     def state_abort(self):
-        # stop all motion
+        # TODO: stop all motion
         return ShowTabletState.EXIT
 
     def state_exit(self):
@@ -322,7 +306,6 @@ class ShowTabletActionServer(Node):
         final_result = self.run_state_machine(test=True)
 
         # get result
-        # result = ShowTablet.Result()
         if final_result.status == ShowTablet.Result.STATUS_SUCCESS:
             goal_handle.succeed()
         elif final_result.status == ShowTablet.Result.STATUS_ERROR:
@@ -341,11 +324,8 @@ def main(args=None):
 
     # Use a MultiThreadedExecutor to enable processing goals concurrently
     executor = MultiThreadedExecutor()
-
     show_tablet_action_server = ShowTabletActionServer()
-
     rclpy.spin(show_tablet_action_server, executor=executor)
-
     show_tablet_action_server.destroy()
 
 
