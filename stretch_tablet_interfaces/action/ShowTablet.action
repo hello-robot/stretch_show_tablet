@@ -1,5 +1,5 @@
 # Request
-int32 request
+string human_joint_dict
 ---
 # Result
 int32 STATUS_SUCCESS = 0
