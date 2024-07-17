@@ -99,7 +99,7 @@ class ShowTabletActionServer(Node):
         self.human = Human()
         self.abort = False
         self.result = ShowTablet.Result()
-        self._robot_joint_trajectory = None
+        self._robot_joint_target = None
 
         # config
         self._robot_move_time_s = 4.
@@ -146,12 +146,49 @@ class ShowTabletActionServer(Node):
         # TODO: implement
         pass
 
-    def __move_to_pose(self, trajectory, blocking: bool=True):
+    def __move_to_pose(self, joint_dict: dict, blocking: bool=True):
+        joint_names = [k for k in joint_dict.keys()]
+        joint_positions = [v for v in joint_dict.values()]
+
+        # build message
+        trajectory = FollowJointTrajectory.Goal()
+        trajectory.trajectory.joint_names = [JOINT_NAME_SHORT_TO_FULL[j] for j in joint_names]
+        trajectory.trajectory.points = [JointTrajectoryPoint()]
+        trajectory.trajectory.points[0].positions = [p for p in joint_positions]
+        trajectory.trajectory.points[0].time_from_start = Duration(seconds=self._robot_move_time_s).to_msg()
+
         future = self.arm_client.send_goal_async(trajectory)
         rclpy.spin_until_future_complete(self, future, executor=self.executor)
         if blocking:
             goal_handle = future.result().get_result_async()
             rclpy.spin_until_future_complete(self, goal_handle, executor=self.executor)
+
+    def __present_tablet(self, joint_dict: dict):
+        pose_tuck = {
+            "arm_extension": 0.05,
+            "yaw": 0.
+        }
+
+        pose_base = {
+            "base": joint_dict["base"],
+            "lift": joint_dict["lift"],
+        }
+
+        pose_arm = {
+            "arm_extension": joint_dict["arm_extension"],
+        }
+
+        pose_wrist = {
+            "yaw": joint_dict["yaw"],
+            "pitch": joint_dict["pitch"],
+            "roll": joint_dict["roll"],
+        }
+
+        # sequence
+        self.__move_to_pose(pose_tuck, blocking=True)
+        self.__move_to_pose(pose_base, blocking=True)
+        self.__move_to_pose(pose_arm, blocking=True)
+        self.__move_to_pose(pose_wrist, blocking=True)
 
     # action callbacks
     # def callback_action_success(self):
@@ -201,8 +238,6 @@ class ShowTabletActionServer(Node):
                     self.get_logger().info(
                         'Service call failed %r' % (e,))
                 break
-        
-        robot_joint_trajectory = FollowJointTrajectory.Goal()
 
         if response.success:
             # get planner result
@@ -221,15 +256,7 @@ class ShowTabletActionServer(Node):
             self.get_logger().info("JOINT CONFIG:")
             self.get_logger().info(json.dumps(joint_dict, indent=2))
 
-            joint_names = [k for k in joint_dict.keys()]
-            joint_positions = [v for v in joint_dict.values()]
-
-            # build message
-            robot_joint_trajectory.trajectory.joint_names = [JOINT_NAME_SHORT_TO_FULL[j] for j in joint_names]
-            robot_joint_trajectory.trajectory.points = [JointTrajectoryPoint()]
-            robot_joint_trajectory.trajectory.points[0].positions = [p for p in joint_positions]
-            robot_joint_trajectory.trajectory.points[0].time_from_start = Duration(seconds=self._robot_move_time_s).to_msg()
-            self._robot_joint_trajectory = robot_joint_trajectory
+            self._robot_joint_target = joint_dict
 
         # return ShowTabletState.NAVIGATE_BASE
         return ShowTabletState.MOVE_ARM_TO_TABLET_POSE
@@ -247,8 +274,8 @@ class ShowTabletActionServer(Node):
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
 
-        trajectory = self._robot_joint_trajectory
-        self.__move_to_pose(trajectory, blocking=True)
+        target = self._robot_joint_target
+        self.__present_tablet(target)
         self.get_logger().info('Finished move_to_pose')
 
         return ShowTabletState.EXIT

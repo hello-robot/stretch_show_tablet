@@ -119,14 +119,6 @@ class DemoShowTablet(Node):
         self._body_pose_estimate = body_pose
         self._camera_pose = result.camera_pose_world
 
-        # # unpack camera pose
-        # camera_pose = result.camera_pose_world
-        # camera_pos = camera_pose.pose.position
-        # camera_ori = camera_pose.pose.orientation
-        # camera_position = np.array([camera_pos.x, camera_pos.y, camera_pos.z])
-        # camera_orientation = R.from_quat([camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]).as_matrix()
-        # world2camera_pose = sp.SE3(camera_orientation, camera_position)
-        # self._camera_pose = world2camera_pose
 
         # UI Pause
         while rclpy.ok():
