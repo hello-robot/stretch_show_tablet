@@ -81,7 +81,12 @@ class TabletPlanner:
 
         tablet = sp.SE3(r, p)
 
-        human_head_root = human.pose_estimate.body_estimate["nose"]
+        try:
+            human_head_root = human.pose_estimate.body_estimate["nose"]
+        except KeyError as e:
+            print("TabletPlanner::in_front_of_eyes: " + str(e))
+            return None
+            
         human_head_root_world = human.pose_estimate.get_point_world(human_head_root)
         r_head = [[0,-1,0], [1,0,0], [0,0,1]]
         human_head_root = sp.SE3(r_head, human_head_root_world)

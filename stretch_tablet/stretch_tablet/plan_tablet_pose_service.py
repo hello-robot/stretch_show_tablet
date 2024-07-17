@@ -14,11 +14,7 @@ from stretch_tablet.human import Human
 import json
 import time
 
-def point2tuple(p: Point):
-    return [p.x, p.y, p.z]
-
-def quat2tuple(q: Quaternion):
-    return [q.x, q.y, q.z, q.w]
+from stretch_tablet.utils_ros import point2tuple, quat2tuple, generate_pose_stamped
 
 class PlanTabletPoseService(Node):
     def __init__(self):
@@ -26,21 +22,8 @@ class PlanTabletPoseService(Node):
         self.srv = self.create_service(PlanTabletPose, 'plan_tablet_pose', self.plan_tablet_callback)
         self.planner = TabletPlanner()
 
-    def generate_pose_stamped(self, position, orientation):
-        pose_stamped = PoseStamped()
-        point = Point()
-        point.x = position[0]
-        point.y = position[1]
-        point.z = position[2]
-        quat = Quaternion()
-        quat.x = orientation[0]
-        quat.y = orientation[1]
-        quat.z = orientation[2]
-        quat.w = orientation[3]
-        pose_stamped.pose.position = point
-        pose_stamped.pose.orientation = quat
-        pose_stamped.header.stamp = self.get_clock().now().to_msg()
-        return pose_stamped
+    def now(self):
+        return self.get_clock().now().to_msg()
 
     def plan_tablet_callback(self, request, response):
         plan_start_time = time.time()
@@ -56,6 +39,9 @@ class PlanTabletPoseService(Node):
 
         # run planner
         tablet_pose_world = self.planner.in_front_of_eyes(human)
+        if tablet_pose_world is None:
+            response.success = False
+            return response
         tablet_position = tablet_pose_world.translation()
         tablet_orientation = R.from_matrix(tablet_pose_world.rotationMatrix()).as_quat().tolist()
         # self.get_logger().info(str(tablet_position))
@@ -79,11 +65,12 @@ class PlanTabletPoseService(Node):
             )
 
         # save response
-        response.tablet_pose = self.generate_pose_stamped(tablet_position, tablet_orientation)
+        response.tablet_pose = generate_pose_stamped(tablet_position, tablet_orientation, self.now())
         response.robot_ik_joint_names = [k for k in ik_solution.keys()]
         response.robot_ik_joint_positions = [v for v in ik_solution.values()]
         # response.robot_base_pose_xy = [v for v in base_location_world]
         response.plan_time_s = time.time() - plan_start_time
+        response.success = True
 
         return response
 

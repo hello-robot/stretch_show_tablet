@@ -13,10 +13,10 @@ find_package(rclcpp REQUIRED)
 # Other dependencies
 find_package(rosidl_default_generators REQUIRED)
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/ShowTablet.action"
-)
+# rosidl_generate_interfaces(${PROJECT_NAME}
+#   "action/ShowTablet.action"
+# )
 
-ament_export_dependencies(rosidl_default_runtime)
+# ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()

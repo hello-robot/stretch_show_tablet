@@ -1,0 +1,15 @@
+# Request
+int32 number_of_samples
+---
+# Result
+int32 STATUS_SUCCESS = 0
+int32 STATUS_CANCELED = 1
+int32 STATUS_ERROR = 2
+
+int32 status
+string body_pose_estimate
+string face_pose_estimate
+---
+# Feedback
+int32 current_state
+int32 number_of_samples_read

@@ -35,8 +35,11 @@ setup(
             'show_tablet_test = stretch_tablet.show_tablet_test:main',
             'stretch_main = stretch_tablet.stretch_main:main',
             'show_tablet_server = stretch_tablet.show_tablet_server:main',
+            'estimate_pose_server = stretch_tablet.estimate_pose_server:main',
             'plan_tablet_pose_service = stretch_tablet.plan_tablet_pose_service:main',
+            'track_head_server = stretch_tablet.track_head_server:main',
             'planner_service_test = stretch_tablet.planner_service_test:main',
+            'demo_show_tablet = stretch_tablet.demo_show_tablet_actions:main',
         ],
     },
 )

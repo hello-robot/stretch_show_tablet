@@ -14,6 +14,8 @@ from stretch_deep_perception import detection_2d_to_3d as d2
 import json
 from enum import Enum
 
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+
 class Camera(Enum):
     HEAD = 1
     GRIPPER = 2
@@ -130,18 +132,20 @@ class ToggleableDetectionNode(DetectionNode):
             depth_topic = topic_prefix + 'aligned_depth_to_color/image_raw'
         elif camera == Camera.GRIPPER:
             topic_prefix = '/gripper_camera/'
-            rgb_topic = topic_prefix + 'color/image_rect_raw'
-            depth_topic = topic_prefix + 'aligned_depth_to_color/image_raw'
+            # rgb_topic = topic_prefix + 'color/image_rect_raw'
+            rgb_topic = topic_prefix + 'image_raw'
+            # depth_topic = topic_prefix + 'aligned_depth_to_color/image_raw'
+            depth_topic = topic_prefix + 'depth/image_rect_raw'
         else:
             raise ValueError
         
         self.rgb_topic_name = rgb_topic
-        self.rgb_image_subscriber = message_filters.Subscriber(self.node, Image, self.rgb_topic_name)
+        self.rgb_image_subscriber = message_filters.Subscriber(self.node, Image, self.rgb_topic_name, qos_profile=QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
 
         self.depth_topic_name = depth_topic
-        self.depth_image_subscriber = message_filters.Subscriber(self.node, Image, self.depth_topic_name)
+        self.depth_image_subscriber = message_filters.Subscriber(self.node, Image, self.depth_topic_name, qos_profile=QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
 
-        self.camera_info_subscriber = message_filters.Subscriber(self.node, CameraInfo, topic_prefix + 'color/camera_info')
+        self.camera_info_subscriber = message_filters.Subscriber(self.node, CameraInfo, topic_prefix + 'color/camera_info', qos_profile=QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
 
         self.synchronizer = message_filters.TimeSynchronizer([self.rgb_image_subscriber, self.depth_image_subscriber, self.camera_info_subscriber], 10)
         self.synchronizer.registerCallback(self.image_callback)

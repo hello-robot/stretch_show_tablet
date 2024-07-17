@@ -8,6 +8,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
     stretch_core_path = get_package_share_directory('stretch_core')
+    show_tablet_path = get_package_share_directory('stretch_tablet')
     stretch_deep_perception_path = get_package_share_directory('stretch_deep_perception')
 
     stretch_driver = IncludeLaunchDescription(
@@ -15,12 +16,17 @@ def generate_launch_description():
         launch_arguments={'mode': 'position', 'broadcast_odom_tf': 'True', 'fail_out_of_range_goal': 'False'}.items(),
     )
 
-    d435i_launch = IncludeLaunchDescription(
+    # d435i_launch = IncludeLaunchDescription(
+    #       PythonLaunchDescriptionSource([os.path.join(
+    #            stretch_core_path, 'launch'),
+    #            '/stretch_realsense.launch.py'])
+    #       )
+
+    multi_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([os.path.join(
-            stretch_core_path, 'launch'),
-            '/stretch_realsense.launch.py']),
-        launch_arguments={"resolution": "low"}.items()
-        )
+            show_tablet_path, 'launch'),
+            '/multi_camera.launch.py'])
+    )
 
     detect_body_landmarks = Node(
         package='stretch_tablet',
@@ -28,16 +34,10 @@ def generate_launch_description():
         output='screen',
         )
 
-    detect_faces = Node(
+    estimate_pose_server = Node(
         package='stretch_tablet',
-        executable='detect_faces',
+        executable='estimate_pose_server',
         output='screen',
-        )
-    
-    show_tablet = Node(
-        package='stretch_tablet',
-        executable='show_tablet_test',
-        output='screen'
     )
 
     rviz_config_path = os.path.join(stretch_deep_perception_path, 'rviz', 'body_landmark_detection.rviz')
@@ -51,9 +51,8 @@ def generate_launch_description():
 
     return LaunchDescription([
         stretch_driver,
-        d435i_launch,
+        multi_camera_launch,
         detect_body_landmarks,
-        detect_faces,
-        show_tablet,
+        estimate_pose_server,
         # rviz_node,  # uncomment if not running headless
         ])
