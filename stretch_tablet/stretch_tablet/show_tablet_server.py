@@ -45,9 +45,10 @@ def enforce_limits(value, min_value, max_value):
     return min([max([min_value, value]), max_value])
 
 def enforce_joint_limits(pose: dict) -> dict:
+    pose["base"] = enforce_limits(pose["base"], -PI_2, PI_2)
     pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
     pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
-    pose["yaw"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
+    pose["yaw"] = enforce_limits(pose["yaw"], -np.deg2rad(60.), PI_2)
     pose["pitch"] = enforce_limits(pose["pitch"], -PI_2, 0.2)
     # pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
     pose["roll"] = 0.
@@ -87,6 +88,9 @@ class ShowTabletActionServer(Node):
             "/stretch_controller/follow_joint_trajectory",
             callback_group=MutuallyExclusiveCallbackGroup(),
         )
+
+        # guts
+        self.executor = MultiThreadedExecutor()
         
         # state
         self.feedback = ShowTablet.Feedback()
@@ -131,6 +135,13 @@ class ShowTabletActionServer(Node):
     def cleanup(self):
         # TODO: implement
         pass
+
+    def __move_to_pose(self, trajectory, blocking: bool=True):
+        future = self.arm_client.send_goal_async(trajectory)
+        rclpy.spin_until_future_complete(self, future, executor=self.executor)
+        if blocking:
+            goal_handle = future.result().get_result_async()
+            rclpy.spin_until_future_complete(self, goal_handle, executor=self.executor)
 
     # callbacks
     def callback_body_landmarks(self, msg: String):
@@ -199,13 +210,21 @@ class ShowTabletActionServer(Node):
             # get planner result
             joint_names = response.robot_ik_joint_names
             joint_positions = response.robot_ik_joint_positions
+
+            # process output
             joint_dict = {n: p for n, p in zip(joint_names, joint_positions)}
             joint_dict = enforce_joint_limits(joint_dict)
-            joint_positions = [v for v in joint_dict.values()]
 
-            # TEST: no base rotation...
-            joint_names = joint_names[1:]
-            joint_positions = joint_positions[1:]
+            # robot cannot do small moves
+            if abs(joint_dict["base"]) < 0.2:
+                joint_dict.pop("base")
+
+            # debug
+            self.get_logger().info("JOINT CONFIG:")
+            self.get_logger().info(json.dumps(joint_dict, indent=2))
+
+            joint_names = [k for k in joint_dict.keys()]
+            joint_positions = [v for v in joint_dict.values()]
 
             # build message
             robot_joint_trajectory.trajectory.joint_names = [JOINT_NAME_SHORT_TO_FULL[j] for j in joint_names]
@@ -213,10 +232,6 @@ class ShowTabletActionServer(Node):
             robot_joint_trajectory.trajectory.points[0].positions = [p for p in joint_positions]
             robot_joint_trajectory.trajectory.points[0].time_from_start = Duration(seconds=self._robot_move_time_s).to_msg()
             self._robot_joint_trajectory = robot_joint_trajectory
-
-            # debug
-            self.get_logger().info(str(response.robot_ik_joint_names))
-            self.get_logger().info(str(response.robot_ik_joint_positions))
 
         # return ShowTabletState.NAVIGATE_BASE
         return ShowTabletState.MOVE_ARM_TO_TABLET_POSE
@@ -235,14 +250,8 @@ class ShowTabletActionServer(Node):
             return ShowTabletState.ABORT
 
         trajectory = self._robot_joint_trajectory
-        future = self.arm_client.send_goal_async(trajectory)
-
-        # rate = self.create_rate(10.)
-        # while rclpy.ok():
-        #     rclpy.spin_once(self)
-        #     if future.done():
-        #         break
-        #     rate.sleep()
+        self.__move_to_pose(trajectory, blocking=True)
+        self.get_logger().info('Finished move_to_pose')
 
         return ShowTabletState.EXIT
 
