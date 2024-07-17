@@ -1,5 +1,7 @@
 # Request
 string human_joint_dict
+geometry_msgs/PoseStamped camera_pose
+
 ---
 # Result
 int32 STATUS_SUCCESS = 0

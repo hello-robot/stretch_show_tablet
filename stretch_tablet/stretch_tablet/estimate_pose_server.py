@@ -6,6 +6,10 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.action.server import ServerGoalHandle
 
 from std_msgs.msg import String
+from geometry_msgs.msg import PoseStamped, Point
+
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 
 import numpy as np
 
@@ -42,6 +46,10 @@ class EstimatePoseActionServer(Node):
             callback=self.callback_body_landmarks,
             qos_profile=1
         )
+
+        # tf
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(buffer=self.tf_buffer, node=self)
 
         self._latest_human_pose_estimate = HumanPoseEstimate()
 
@@ -105,7 +113,9 @@ class EstimatePoseActionServer(Node):
 
         self.get_logger().info(str(json.dumps(pose_estimate.body_estimate)))
 
+        # construct result
         result.body_pose_estimate = json.dumps(pose_estimate.body_estimate)
+        result.camera_pose_world = self.lookup_camera_pose()
         return result
 
     # helpers
@@ -114,6 +124,28 @@ class EstimatePoseActionServer(Node):
 
     def clear_last_pose_estimate(self):
         self._latest_human_pose_estimate.clear_estimates()
+
+    def lookup_camera_pose(self) -> PoseStamped:
+        msg = PoseStamped()
+
+        try:
+            t = self.tf_buffer.lookup_transform(
+                    "odom",
+                    "camera_color_optical_frame",
+                    rclpy.time.Time())
+            
+            pos = Point(x=t.transform.translation.x,
+                        y=t.transform.translation.y,
+                        z=t.transform.translation.z)
+            msg.pose.position = pos
+            msg.pose.orientation = t.transform.rotation
+            msg.header.stamp = t.header.stamp
+
+        except Exception as e:
+            self.get_logger().error(str(e))
+            self.get_logger().error("EstimatePoseActionServer::lookup_camera_pose: returning empty pose!")
+        
+        return msg
 
     def observe_human(self, n_samples: int=1, goal_handle:ServerGoalHandle=None) -> HumanPoseEstimate:
         """

@@ -9,6 +9,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from std_msgs.msg import String
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
+from geometry_msgs.msg import PoseStamped
 
 import sophuspy as sp
 import numpy as np
@@ -45,6 +46,7 @@ def enforce_limits(value, min_value, max_value):
     return min([max([min_value, value]), max_value])
 
 def enforce_joint_limits(pose: dict) -> dict:
+    pose["base"] = enforce_limits(pose["base"], -PI_2, PI_2)
     pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
     pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
     pose["yaw"] = enforce_limits(pose["yaw"], -PI_2, PI_2)
@@ -103,6 +105,15 @@ class ShowTabletActionServer(Node):
     def now(self):
         return self.get_clock().now().to_msg()
 
+    def set_human_camera_pose(self, world2camera_pose: PoseStamped):
+        # unpack camera pose
+        camera_pos = world2camera_pose.pose.position
+        camera_ori = world2camera_pose.pose.orientation
+        camera_position = np.array([camera_pos.x, camera_pos.y, camera_pos.z])
+        camera_orientation = R.from_quat([camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]).as_matrix()
+        world2camera_pose = sp.SE3(camera_orientation, camera_position)
+        self.human.pose_estimate.set_camera_pose(world2camera_pose)
+
     def build_tablet_pose_request(self):
         request = PlanTabletPose.Request()
         human = self.human
@@ -131,18 +142,6 @@ class ShowTabletActionServer(Node):
     def cleanup(self):
         # TODO: implement
         pass
-
-    # callbacks
-    def callback_body_landmarks(self, msg: String):
-        msg_data = msg.data.replace("\"", "")
-        if msg_data == "None" or msg_data is None:
-            return
-
-        data = load_bad_json_data(msg_data)
-
-        if data is None or data == "{}":
-            return
-        self.human.pose_estimate.set_body_estimate(data)
 
     # action callbacks
     # def callback_action_success(self):
@@ -201,11 +200,13 @@ class ShowTabletActionServer(Node):
             joint_positions = response.robot_ik_joint_positions
             joint_dict = {n: p for n, p in zip(joint_names, joint_positions)}
             joint_dict = enforce_joint_limits(joint_dict)
-            joint_positions = [v for v in joint_dict.values()]
 
-            # TEST: no base rotation...
-            joint_names = joint_names[1:]
-            joint_positions = joint_positions[1:]
+            # pop base rotation if too small
+            if abs(joint_dict["base"]) < 0.2:
+                joint_dict.pop("base")
+
+            joint_names = [k for k in joint_dict.keys()]
+            joint_positions = [v for v in joint_dict.values()]
 
             # build message
             robot_joint_trajectory.trajectory.joint_names = [JOINT_NAME_SHORT_TO_FULL[j] for j in joint_names]
@@ -302,6 +303,10 @@ class ShowTabletActionServer(Node):
         # load body pose
         pose_estimate = load_bad_json_data(goal_handle.request.human_joint_dict)
         self.human.pose_estimate.set_body_estimate(pose_estimate)
+        self.set_human_camera_pose(goal_handle.request.camera_pose)
+
+        self.get_logger().info(str(self.human.pose_estimate.get_body_world()))
+        self.get_logger().info(str(self.human.pose_estimate.get_camera_pose()))
         
         final_result = self.run_state_machine(test=True)
 
