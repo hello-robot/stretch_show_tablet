@@ -169,10 +169,15 @@ class ShowTabletActionServer(Node):
             "yaw": 0.
         }
 
-        pose_base = {
-            "base": joint_dict["base"],
-            "lift": joint_dict["lift"],
-        }
+        if "base" in joint_dict.keys():
+            pose_base = {
+                "base": joint_dict["base"],
+                "lift": joint_dict["lift"],
+            }
+        else:
+            pose_base = {
+                "lift": joint_dict["lift"]
+            }
 
         pose_arm = {
             "arm_extension": joint_dict["arm_extension"],

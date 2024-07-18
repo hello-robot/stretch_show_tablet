@@ -52,6 +52,34 @@ def spherical_to_cartesian(radius, azimuth, elevation):
     
     return [x, y, z]
 
+def vector_projection(a, b):
+    """
+    Return the projection of vector b onto vector a.
+
+    Parameters:
+    a (np.array): 3D vector
+    b (np.array): 3D vector
+
+    Returns:
+    np.array: projection of b onto a
+    """
+    a = np.array(a)
+    b = np.array(b)
+
+    # Compute the dot product of a and b
+    dot_product = np.dot(a, b)
+    
+    # Compute the dot product of a with itself
+    a_dot_a = np.dot(a, a)
+    
+    # Compute the projection scalar
+    projection_scalar = dot_product / a_dot_a
+    
+    # Compute the projection vector
+    projection_vector = projection_scalar * a
+    
+    return projection_vector
+
 def in_range(value, range):
     return True if value >= range[0] and value <= range[1] else False
 
