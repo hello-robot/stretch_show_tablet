@@ -6,6 +6,10 @@ from stretch_tablet_interfaces.action import EstimateHumanPose, TrackHead, ShowT
 
 from stretch_tablet.utils import load_bad_json_data
 
+import sophuspy as sp
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
 import threading
 import json
 
@@ -63,6 +67,9 @@ class DemoShowTablet(Node):
 
         # state
         self._body_pose_estimate = None
+        self._camera_pose = None
+
+        # feedback
         self._feedback_estimate_pose = EstimateHumanPose.Feedback()
         self._feedback_show_tablet = ShowTablet.Feedback()
         self._feedback_track_head = TrackHead.Feedback()
@@ -110,6 +117,8 @@ class DemoShowTablet(Node):
             return DemoState.ESTIMATE_POSE
         
         self._body_pose_estimate = body_pose
+        self._camera_pose = result.camera_pose_world
+
 
         # UI Pause
         while rclpy.ok():
@@ -138,6 +147,7 @@ class DemoShowTablet(Node):
         # send request
         request = ShowTablet.Goal()
         request.human_joint_dict = json.dumps(self._body_pose_estimate)
+        request.camera_pose = self._camera_pose
         
         result = run_action(self.act_show_tablet, request, self.rate, feedback_callback=self.callback_show_tablet_feedback)
 

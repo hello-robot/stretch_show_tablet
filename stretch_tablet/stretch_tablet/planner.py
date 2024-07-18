@@ -6,7 +6,7 @@ from scipy.optimize import minimize
 from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
 
 from stretch_tablet.human import Human, generate_test_human
-from stretch_tablet.utils import spherical_to_cartesian
+from stretch_tablet.utils import spherical_to_cartesian, vector_projection
 
 import os
 import time
@@ -67,6 +67,32 @@ class TabletPlanner:
         }
 
     @staticmethod
+    def _get_shoulder_vector(human: Human) -> np.array:
+        l_shoulder = np.array(human.pose_estimate.body_estimate["left_shoulder"])
+        r_shoulder = np.array(human.pose_estimate.body_estimate["right_shoulder"])
+        l_shoulder = np.squeeze(np.array(human.pose_estimate.get_point_world(l_shoulder)))
+        r_shoulder = np.squeeze(np.array(human.pose_estimate.get_point_world(r_shoulder)))
+        # return l_shoulder - r_shoulder
+        return r_shoulder - l_shoulder
+
+    @staticmethod
+    def _get_head_shoulder_orientation(human: Human) -> np.ndarray:
+        y = TabletPlanner._get_shoulder_vector(human)
+        z = np.array([0, 0, 1])
+        proj_z_y = vector_projection(z, y)
+        y = y - proj_z_y
+        x = np.cross(y, z)
+
+        # normalize
+        x = x / np.linalg.norm(x)
+        y = y / np.linalg.norm(y)
+        z = z / np.linalg.norm(z)
+
+        rotation_matrix = np.array([x, y, z]).T
+
+        return rotation_matrix
+
+    @staticmethod
     def in_front_of_eyes(human: Human) -> sp.SE3:
         """
         Relative to eyes / forehead
@@ -74,8 +100,9 @@ class TabletPlanner:
         """
 
         d = human.preferences["eye_distance"]
-        p = np.array([d, 0., 0.])
-        r = np.diag([-1., -1., 1.])  # Rotate Z by 180*
+        p = np.array([-d, 0., 0.])
+        # r = np.diag([-1., -1., 1.])  # Rotate Z by 180*
+        r = np.eye(3)
         # TODO: add rotate about y by tilt_angle
         # TODO: add rotate about x by +/- 90 if portrait?
 
@@ -88,7 +115,8 @@ class TabletPlanner:
             return None
             
         human_head_root_world = human.pose_estimate.get_point_world(human_head_root)
-        r_head = [[0,-1,0], [1,0,0], [0,0,1]]
+        # r_head = [[0,-1,0], [1,0,0], [0,0,1]]
+        r_head = TabletPlanner._get_head_shoulder_orientation(human)
         human_head_root = sp.SE3(r_head, human_head_root_world)
 
         tablet_world = human_head_root * tablet
