@@ -3,7 +3,8 @@ import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
 from scipy.optimize import minimize
 
-from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
+# from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
+from stretch_web_teleop_helpers.pinocchio_ik_solver import PinocchioIKSolver
 
 from stretch_tablet.human import Human, generate_test_human
 from stretch_tablet.utils import spherical_to_cartesian, vector_projection

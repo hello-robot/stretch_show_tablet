@@ -69,9 +69,12 @@ class EstimatePoseActionServer(Node):
             # remove points that are adjacent to the camera
             filtered_human_estimate = {}
             for k in latest_human.body_estimate.keys():
-                point = latest_human.body_estimate[k]
-                if np.linalg.norm(point) > 0.02:
-                    filtered_human_estimate[k] = point
+                try:
+                    point = latest_human.body_estimate[k]
+                    if np.linalg.norm(point) > 0.02:
+                        filtered_human_estimate[k] = point
+                except KeyError:
+                    pass
 
             latest_human.set_body_estimate(filtered_human_estimate)
 

@@ -10,6 +10,8 @@ from std_msgs.msg import String
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import JointState
+from action_msgs.srv import CancelGoal
 
 import sophuspy as sp
 import numpy as np
@@ -24,6 +26,8 @@ import json
 from stretch_tablet.utils import load_bad_json_data
 from stretch_tablet.utils_ros import generate_pose_stamped
 from stretch_tablet.human import Human
+
+import threading
 
 # testing
 import time
@@ -78,9 +82,21 @@ class ShowTabletActionServer(Node):
             callback_group=ReentrantCallbackGroup(),
             cancel_callback=self.callback_action_cancel)
         
+        # sub
+        self.sub_joint_state = self.create_subscription(
+            JointState,
+            "/joint_states",
+            callback=self.callback_joint_state,
+            qos_profile=1
+        )
+
         # srv
         self.srv_plan_tablet_pose = self.create_client(
             PlanTabletPose, 'plan_tablet_pose')
+        
+        self.srv_cancel_move = self.create_client(
+            CancelGoal, '/show_tablet/_action/cancel_goal'
+        )
         
         # motion
         self.arm_client = ActionClient(
@@ -91,7 +107,8 @@ class ShowTabletActionServer(Node):
         )
 
         # guts
-        self.executor = MultiThreadedExecutor()
+        # TODO: get rid?
+        # self.executor = MultiThreadedExecutor()
         
         # state
         self.feedback = ShowTablet.Feedback()
@@ -100,6 +117,7 @@ class ShowTabletActionServer(Node):
         self.abort = False
         self.result = ShowTablet.Result()
         self._robot_joint_target = None
+        self._joint_state = JointState()
 
         # config
         self._robot_move_time_s = 4.
@@ -143,8 +161,14 @@ class ShowTabletActionServer(Node):
         super().destroy_node()
 
     def cleanup(self):
-        # TODO: implement
-        pass
+        self.__stop_motion()
+
+    def __is_cancelled(self):
+        cancel_requested = False
+        if self.goal_handle is not None:
+            cancel_requested = self.goal_handle.is_cancel_requested
+        
+        return cancel_requested or self.abort
 
     def __move_to_pose(self, joint_dict: dict, blocking: bool=True):
         joint_names = [k for k in joint_dict.keys()]
@@ -157,12 +181,47 @@ class ShowTabletActionServer(Node):
         trajectory.trajectory.points[0].positions = [p for p in joint_positions]
         trajectory.trajectory.points[0].time_from_start = Duration(seconds=self._robot_move_time_s).to_msg()
 
+        # send goal + wait until finished while checking for cancel
+        rate = self.create_rate(10.)
         future = self.arm_client.send_goal_async(trajectory)
-        rclpy.spin_until_future_complete(self, future, executor=self.executor)
-        if blocking:
-            goal_handle = future.result().get_result_async()
-            rclpy.spin_until_future_complete(self, goal_handle, executor=self.executor)
 
+        self.get_logger().info('here 0')
+        while rclpy.ok() and not future.done():
+            self.get_logger().info('inside!')
+            rate.sleep()
+
+        self.get_logger().info('here 1')
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().error("ShowTabletActionServer::__move_to_pose: goal rejected :(")
+            return
+    
+        self.get_logger().info('here 2')
+        goal_future = goal_handle.get_result_async()
+        while rclpy.ok() and not goal_future.done():
+            self.get_logger().info('here in')
+            if self.__is_cancelled():
+                self.__stop_motion()
+                return
+            rate.sleep()
+        
+        # rclpy.spin_until_future_complete(self, future, executor=self.executor)  # TODO: kill
+
+        # if blocking:
+        #     spin_thread = threading.Thread(target=rclpy.spin, args=(self, self.executor))  # TODO: kill
+        #     spin_thread.start()
+
+        #     rate = self.create_rate(10.)
+        #     goal_handle = future.result().get_result_async()
+        #     while rclpy.ok() and (not goal_handle.done()):
+        #         if self.__is_cancelled():
+        #             self.__stop_motion()
+        #             return
+        #         rate.sleep()
+        
+        #     spin_thread.join()
+
+                
     def __present_tablet(self, joint_dict: dict):
         pose_tuck = {
             "arm_extension": 0.05,
@@ -190,10 +249,32 @@ class ShowTabletActionServer(Node):
         }
 
         # sequence
-        self.__move_to_pose(pose_tuck, blocking=True)
-        self.__move_to_pose(pose_base, blocking=True)
-        self.__move_to_pose(pose_arm, blocking=True)
-        self.__move_to_pose(pose_wrist, blocking=True)
+        for pose in [pose_tuck, pose_base, pose_arm, pose_wrist]:
+            if self.__is_cancelled():
+                return
+            
+            self.__move_to_pose(pose, blocking=True)
+
+    def __stop_motion(self):
+        self.srv_cancel_move.call_async(CancelGoal.Request())
+        # js = self._joint_state
+        # try:
+        #     lift = js.position[js.name.index("joint_lift")]
+        #     arm = sum([js.position[js.name.index("joint_arm_l" + str(i))] for i in range(4)])
+        #     yaw = js.position[js.name.index("joint_wrist_yaw")]
+        #     pitch = js.position[js.name.index("joint_wrist_pitch")]
+        #     roll = js.position[js.name.index("joint_wrist_roll")]
+        #     joint_dict = {
+        #         "lift": lift,
+        #         "arm_extension": arm,
+        #         "yaw": yaw,
+        #         "pitch": pitch,
+        #         "roll": roll,
+        #         "base": 0.
+        #     }
+        #     self.__move_to_pose(joint_dict, blocking=False)
+        # except Exception as e:
+        #     self.get_logger().error(str(e))
 
     # action callbacks
     # def callback_action_success(self):
@@ -203,6 +284,7 @@ class ShowTabletActionServer(Node):
 
     def callback_action_cancel(self, goal_handle):
         self.cleanup()
+        self.abort = True
         self.result.status = ShowTablet.Result.STATUS_CANCELED
         return CancelResponse.ACCEPT
         # return ShowTablet.Result(result=-1)
@@ -212,18 +294,21 @@ class ShowTabletActionServer(Node):
     #     self.result.status = ShowTablet.Result.STATUS_ERROR
     #     return ShowTablet.Result()
 
+    def callback_joint_state(self, msg: JointState):
+        self._joint_state = msg
+
     # states
     def state_idle(self):
-        if self.abort or self.goal_handle.is_cancel_requested:
+        if self.__is_cancelled():
             return ShowTabletState.ABORT
 
         if False:
             return ShowTabletState.IDLE
-        
+
         return ShowTabletState.PLAN_TABLET_POSE
 
     def state_plan_tablet_pose(self):
-        if self.abort or self.goal_handle.is_cancel_requested:
+        if self.__is_cancelled():
             return ShowTabletState.ABORT
         
         # if not self.human.pose_estimate.is_populated():
@@ -236,6 +321,10 @@ class ShowTabletActionServer(Node):
         # wait for srv to finish
         while rclpy.ok():
             rclpy.spin_once(self)
+
+            if self.__is_cancelled():
+                return ShowTabletState.ABORT
+            
             if future.done():
                 try:
                     response = future.result()
@@ -262,12 +351,15 @@ class ShowTabletActionServer(Node):
             self.get_logger().info(json.dumps(joint_dict, indent=2))
 
             self._robot_joint_target = joint_dict
+        
+        if self.__is_cancelled():
+            return ShowTabletState.ABORT
 
         # return ShowTabletState.NAVIGATE_BASE
         return ShowTabletState.MOVE_ARM_TO_TABLET_POSE
 
     def state_navigate_base(self):
-        if self.abort or self.goal_handle.is_cancel_requested:
+        if self.__is_cancelled():
             return ShowTabletState.ABORT
 
         # TODO: Implement this state
@@ -276,23 +368,26 @@ class ShowTabletActionServer(Node):
         return ShowTabletState.MOVE_ARM_TO_TABLET_POSE
     
     def state_move_arm_to_tablet_pose(self):
-        if self.abort or self.goal_handle.is_cancel_requested:
+        if self.__is_cancelled():
             return ShowTabletState.ABORT
 
         target = self._robot_joint_target
         self.__present_tablet(target)
         self.get_logger().info('Finished move_to_pose')
 
+        if self.__is_cancelled():
+            return ShowTabletState.ABORT
+
         return ShowTabletState.EXIT
 
     def state_end_interaction(self):
-        if self.abort or self.goal_handle.is_cancel_requested:
+        if self.__is_cancelled():
             return ShowTabletState.ABORT
 
         return ShowTabletState.EXIT
     
     def state_abort(self):
-        # TODO: stop all motion
+        self.cleanup()
         return ShowTabletState.EXIT
 
     def state_exit(self):
