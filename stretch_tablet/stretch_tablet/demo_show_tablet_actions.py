@@ -1,4 +1,5 @@
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.action import ActionClient, GoalResponse, CancelResponse
 from rclpy.timer import Rate
@@ -73,10 +74,6 @@ class DemoShowTablet(Node):
         self._feedback_estimate_pose = EstimateHumanPose.Feedback()
         self._feedback_show_tablet = ShowTablet.Feedback()
         self._feedback_track_head = TrackHead.Feedback()
-
-        # threads for UI
-        self.ui_thread = threading.Thread(target=self.main)
-        self.ui_thread.start()
 
     # callbacks
     def callback_estimate_pose_feedback(self, feedback: EstimateHumanPose.Feedback):
@@ -165,7 +162,7 @@ class DemoShowTablet(Node):
         self.get_logger().info("DemoShowTablet: Exiting!")
         return DemoState.EXIT
 
-    def main(self):
+    def run(self):
         state = DemoState.IDLE
 
         self.rate = self.create_rate(self._wait_rate_hz)
@@ -193,10 +190,29 @@ class DemoShowTablet(Node):
 def main():
     rclpy.init()
     node = DemoShowTablet()
-    rclpy.spin(node)
-    node.ui_thread.join()
+    executor = MultiThreadedExecutor(num_threads=4)
+
+    # Spin in the background since detecting faces will block
+    # the main thread
+    spin_thread = threading.Thread(
+        target=rclpy.spin,
+        args=(node,),
+        kwargs={"executor": executor},
+        daemon=True,
+    )
+    spin_thread.start()
+
+    # Run face detection
+    try:
+        node.run()
+    except KeyboardInterrupt:
+        pass
+
+    # Terminate this node
     node.destroy_node()
     rclpy.shutdown()
+    # Join the spin thread (so it is spinning in the main thread)
+    spin_thread.join()
 
 if __name__ == '__main__':
     main()
