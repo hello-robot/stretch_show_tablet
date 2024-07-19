@@ -33,7 +33,7 @@ class ToggleableDetectionNode(DetectionNode):
         self.toggled_on = False
 
     def toggle_callback(self, req: SetBool.Request, res: SetBool.Response):
-        self.get_logger().info(f"Toggle detection service: {req.data}")
+        self.logger.info(f"Toggle detection service: {req.data}")
         self.toggled_on = req.data
         res.success = True
         return res
