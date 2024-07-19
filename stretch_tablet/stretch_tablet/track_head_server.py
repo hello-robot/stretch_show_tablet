@@ -64,7 +64,6 @@ class HeadTrackerServer(Node):
         # state
         self._pose_estimate = HumanPoseEstimate()
         self._joint_state = JointState()
-        self._exit = False
 
         self.controller = TabletController()
 
@@ -80,7 +79,6 @@ class HeadTrackerServer(Node):
 
     # callbacks
     def callback_action_cancel(self, goal_handle: ServerGoalHandle):
-        self._exit = True
         return CancelResponse.ACCEPT
     
     def callback_face_landmarks(self, msg):        
@@ -135,7 +133,8 @@ class HeadTrackerServer(Node):
 
         while rclpy.ok():
             self.get_logger().info("Current State: " + str(self.state))
-            if self._exit:
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
                 self.state = HeadTrackerState.DONE
 
             feedback.status = self.state.value
