@@ -83,7 +83,7 @@ def generate_launch_description():
         multi_camera_launch,
         detect_body_landmarks,
         detect_faces,
-        estimate_pose_server,
+        # estimate_pose_server,
         show_tablet_server,
         planner_service,
         track_head_server,

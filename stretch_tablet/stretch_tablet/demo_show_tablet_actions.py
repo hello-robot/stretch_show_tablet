@@ -36,7 +36,7 @@ def run_action(action_handle: ActionClient, request, rate: Rate, feedback_callba
 
 class DemoState(Enum):
     IDLE = 0
-    ESTIMATE_POSE = 1
+    # ESTIMATE_POSE = 1
     SHOW_TABLET = 2
     TRACK_HEAD = 3
     EXIT = 99
@@ -57,7 +57,7 @@ class DemoShowTablet(Node):
 
         # wait for servers
         _wait_time = 10.
-        for act in [self.act_estimate_pose, self.act_show_tablet, self.act_track_head]:
+        for act in [self.act_show_tablet, self.act_track_head]:
             if not act.wait_for_server(_wait_time):
                 self.get_logger().error("DemoShowTablet::init: did not find action servers, exiting...")
                 rclpy.shutdown()
@@ -79,9 +79,6 @@ class DemoShowTablet(Node):
         self.ui_thread.start()
 
     # callbacks
-    def callback_estimate_pose_feedback(self, feedback: EstimateHumanPose.Feedback):
-        self._feedback_estimate_pose = feedback
-
     def callback_show_tablet_feedback(self, feedback: ShowTablet.Feedback):
         self._feedback_show_tablet = feedback
 
@@ -92,62 +89,26 @@ class DemoShowTablet(Node):
     def state_idle(self) -> DemoState:
         print(" ")
         print("=" * 5 + " Main Menu " + 5 * "=")
-        print("(E) Estimate Pose    (Q) Quit")
+        # print("(E) Estimate Pose    (Q) Quit")
+        print("(S) Show Tablet    (Q) Quit")
         ui = input("Selection:").lower()
         
-        if ui == 'e':
-            return DemoState.ESTIMATE_POSE
+        if ui == 's':
+            return DemoState.SHOW_TABLET
         elif ui == 'q':
             return DemoState.EXIT
         else:
             return DemoState.IDLE
 
-    def state_estimate_human_pose(self) -> DemoState:
-        # build request
-        request = EstimateHumanPose.Goal()
-        request.number_of_samples = 10
-
-        # get result
-        result = run_action(self.act_estimate_pose, request, self.rate, feedback_callback=self.callback_estimate_pose_feedback)
-        body_pose = load_bad_json_data(result.body_pose_estimate)
-
-        # Try again if body pose isn't populated (pose estimator failed)
-        if body_pose is None:
-            self.get_logger().warn("DemoShowTablet::state_estimate_human_pose: body estimate is None!")
-            return DemoState.ESTIMATE_POSE
-        
-        self._body_pose_estimate = body_pose
-        self._camera_pose = result.camera_pose_world
-
-
-        # UI Pause
-        while rclpy.ok():
-            print(" ")
-            print("=" * 5 + " Pose Estimate Menu " + 5 * "=")
-            print("(E) Estimate Pose    (S) Show tablet")
-            print("(T) Track Head       (Q) Quit")
-            ui = input("Selection:").lower()
-            
-            if ui == 'e':
-                return DemoState.ESTIMATE_POSE
-            elif ui == 's':
-                return DemoState.SHOW_TABLET
-            elif ui == 't':
-                return DemoState.TRACK_HEAD
-            elif ui == 'q':
-                return DemoState.EXIT
-
-        return DemoState.EXIT
-
     def state_show_tablet(self) -> DemoState:
-        if self._body_pose_estimate is None:
-            self.get_logger().warn("DemoShowTablet::state_show_tablet: body estimate is None!")
-            return DemoState.ESTIMATE_POSE
+        # if self._body_pose_estimate is None:
+        #     self.get_logger().warn("DemoShowTablet::state_show_tablet: body estimate is None!")
+        #     return DemoState.ESTIMATE_POSE
         
         # send request
         request = ShowTablet.Goal()
-        request.human_joint_dict = json.dumps(self._body_pose_estimate)
-        request.camera_pose = self._camera_pose
+        # request.human_joint_dict = json.dumps(self._body_pose_estimate)
+        # request.camera_pose = self._camera_pose
         
         result = run_action(self.act_show_tablet, request, self.rate, feedback_callback=self.callback_show_tablet_feedback)
 
@@ -174,8 +135,8 @@ class DemoShowTablet(Node):
             self.get_logger().info("Current State: " + str(state))
             if state == DemoState.IDLE:
                 state = self.state_idle()
-            elif state == DemoState.ESTIMATE_POSE:
-                state = self.state_estimate_human_pose()
+            # elif state == DemoState.ESTIMATE_POSE:
+            #     state = self.state_estimate_human_pose()
             elif state == DemoState.SHOW_TABLET:
                 state = self.state_show_tablet()
             elif state == DemoState.TRACK_HEAD:

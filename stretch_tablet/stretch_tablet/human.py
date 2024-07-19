@@ -53,6 +53,12 @@ class HumanPoseEstimate:
         self.body_estimate = data
         self.body_points = np.array([v for v in data.values()]).T
 
+    def get_body_estimate_string(self):
+        if self.body_estimate is not None:
+            return json.dumps(self.body_estimate)
+        else:
+            return None
+
     def load_camera_pose(self, camera_file):
         with open(camera_file) as f:
             data = json.load(f)

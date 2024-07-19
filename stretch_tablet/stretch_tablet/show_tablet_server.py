@@ -5,11 +5,15 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.time import Time
 
 from std_msgs.msg import String
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Point
+
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 
 import sophuspy as sp
 import numpy as np
@@ -23,7 +27,7 @@ import json
 
 from stretch_tablet.utils import load_bad_json_data
 from stretch_tablet.utils_ros import generate_pose_stamped
-from stretch_tablet.human import Human
+from stretch_tablet.human import Human, HumanPoseEstimate
 
 # testing
 import time
@@ -59,10 +63,11 @@ def enforce_joint_limits(pose: dict) -> dict:
 # classes
 class ShowTabletState(Enum):
     IDLE = 0
-    PLAN_TABLET_POSE = 1
-    NAVIGATE_BASE = 2  # not implemented yet
-    MOVE_ARM_TO_TABLET_POSE = 3
-    END_INTERACTION = 4
+    ESTIMATE_HUMAN_POSE = 1
+    PLAN_TABLET_POSE = 2
+    NAVIGATE_BASE = 3  # not implemented yet
+    MOVE_ARM_TO_TABLET_POSE = 4
+    END_INTERACTION = 5
     EXIT = 98
     ABORT = 99
     ERROR = -1
@@ -78,6 +83,21 @@ class ShowTabletActionServer(Node):
             callback_group=ReentrantCallbackGroup(),
             cancel_callback=self.callback_action_cancel)
         
+        # pub
+        self.pub_valid_estimates = self.create_publisher(
+            String,
+            "/human_estimates/latest_body_pose",
+            qos_profile=1
+        )
+        
+        # sub
+        self.sub_body_landmarks = self.create_subscription(
+            String,
+            "/body_landmarks/landmarks_3d",
+            callback=self.callback_body_landmarks,
+            qos_profile=1
+        )
+
         # srv
         self.srv_plan_tablet_pose = self.create_client(
             PlanTabletPose, 'plan_tablet_pose')
@@ -90,6 +110,10 @@ class ShowTabletActionServer(Node):
             callback_group=MutuallyExclusiveCallbackGroup(),
         )
 
+        # tf
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(buffer=self.tf_buffer, node=self)
+
         # guts
         self.executor = MultiThreadedExecutor()
         
@@ -99,14 +123,23 @@ class ShowTabletActionServer(Node):
         self.human = Human()
         self.abort = False
         self.result = ShowTablet.Result()
+
+        self._pose_history = []
+
         self._robot_joint_target = None
+        self._pose_estimator_enabled = False
 
         # config
         self._robot_move_time_s = 4.
+        self._n_poses = 10
 
     # helpers
-    def now(self):
+    def now(self) -> Time:
         return self.get_clock().now().to_msg()
+    
+    def get_pose_history(self, max_age=float("inf")):
+        # TODO: check if this boi is stale
+        return [p for (p, t) in self._pose_history]
 
     def set_human_camera_pose(self, world2camera_pose: PoseStamped):
         # unpack camera pose
@@ -138,6 +171,29 @@ class ShowTabletActionServer(Node):
 
         return request
     
+    def lookup_camera_pose(self) -> PoseStamped:
+        msg = PoseStamped()
+
+        try:
+            t = self.tf_buffer.lookup_transform(
+                    # "odom",
+                    "base_link",
+                    "camera_color_optical_frame",
+                    rclpy.time.Time())
+            
+            pos = Point(x=t.transform.translation.x,
+                        y=t.transform.translation.y,
+                        z=t.transform.translation.z)
+            msg.pose.position = pos
+            msg.pose.orientation = t.transform.rotation
+            msg.header.stamp = t.header.stamp
+
+        except Exception as e:
+            self.get_logger().error(str(e))
+            self.get_logger().error("EstimatePoseActionServer::lookup_camera_pose: returning empty pose!")
+        
+        return msg
+    
     def destroy(self):
         self._action_server.destroy()
         super().destroy_node()
@@ -145,6 +201,13 @@ class ShowTabletActionServer(Node):
     def cleanup(self):
         # TODO: implement
         pass
+
+    def __push_to_pose_history(self, pose_estimate: HumanPoseEstimate):
+        entry = (pose_estimate, self.now())
+        self._pose_history.append(entry)
+
+        while len(self._pose_history) > self._n_poses:
+            self._pose_history.pop(0)
 
     def __move_to_pose(self, joint_dict: dict, blocking: bool=True):
         joint_names = [k for k in joint_dict.keys()]
@@ -195,6 +258,53 @@ class ShowTabletActionServer(Node):
         self.__move_to_pose(pose_arm, blocking=True)
         self.__move_to_pose(pose_wrist, blocking=True)
 
+    # callbacks
+    def callback_body_landmarks(self, msg: String):
+        if self._pose_estimator_enabled:
+            # config
+            necessary_keys = [
+                "nose",
+                "neck",
+                "right_shoulder",
+                "left_shoulder"
+            ]
+        
+            # Load data
+            msg_data = msg.data.replace("\"", "")
+            if msg_data == "None" or msg_data is None:
+                return
+
+            data = load_bad_json_data(msg_data)
+
+            if data is None or data == "{}":
+                return
+            
+            # populate pose
+            latest_pose = HumanPoseEstimate()
+            latest_pose.set_body_estimate(data)
+
+            # get visible keypoints
+            pose_keys = latest_pose.body_estimate.keys()
+
+            # check if necessary keys visible
+            can_see = True
+            for key in necessary_keys:
+                if key not in pose_keys:
+                    self.get_logger().info("cannot see key joints!")
+                    can_see = False
+                    continue  # for
+            
+            if not can_see:
+                return
+            
+            # publish pose and add to pose history
+            # self.pub_valid_estimates.publish(String(data=msg_data))
+            self.__push_to_pose_history(latest_pose)
+
+            average_pose = HumanPoseEstimate.average_pose_estimates(self.get_pose_history())
+            pose_str = average_pose.get_body_estimate_string()
+            self.pub_valid_estimates.publish(String(data=pose_str))
+
     # action callbacks
     # def callback_action_success(self):
     #     self.cleanup()
@@ -220,6 +330,23 @@ class ShowTabletActionServer(Node):
         if False:
             return ShowTabletState.IDLE
         
+        return ShowTabletState.ESTIMATE_HUMAN_POSE
+    
+    def state_estimate_pose(self):
+        if self.abort or self.goal_handle.is_cancel_requested:
+            return ShowTabletState.ABORT
+
+        self._pose_estimator_enabled = True
+
+        while rclpy.ok():
+            if len(self._pose_history) >= self._n_poses:
+                break
+
+        self._pose_estimator_enabled = False
+
+        self.human.pose_estimate = HumanPoseEstimate.average_pose_estimates(self.get_pose_history())
+        self.set_human_camera_pose(self.lookup_camera_pose())
+
         return ShowTabletState.PLAN_TABLET_POSE
 
     def state_plan_tablet_pose(self):
@@ -311,6 +438,8 @@ class ShowTabletActionServer(Node):
             # main state machine
             elif state == ShowTabletState.IDLE:
                 state = self.state_idle()
+            elif state == ShowTabletState.ESTIMATE_HUMAN_POSE:
+                state = self.state_estimate_pose()
             elif state == ShowTabletState.PLAN_TABLET_POSE:
                 state = self.state_plan_tablet_pose()
             # elif state == ShowTabletState.NAVIGATE_BASE:
@@ -339,12 +468,12 @@ class ShowTabletActionServer(Node):
         self.goal_handle = goal_handle
 
         # load body pose
-        pose_estimate = load_bad_json_data(goal_handle.request.human_joint_dict)
-        self.human.pose_estimate.set_body_estimate(pose_estimate)
-        self.set_human_camera_pose(goal_handle.request.camera_pose)
+        # pose_estimate = load_bad_json_data(goal_handle.request.human_joint_dict)
+        # self.human.pose_estimate.set_body_estimate(pose_estimate)
+        # self.set_human_camera_pose(goal_handle.request.camera_pose)
 
-        self.get_logger().info(str(self.human.pose_estimate.get_body_world()))
-        self.get_logger().info(str(self.human.pose_estimate.get_camera_pose()))
+        # self.get_logger().info(str(self.human.pose_estimate.get_body_world()))
+        # self.get_logger().info(str(self.human.pose_estimate.get_camera_pose()))
         
         final_result = self.run_state_machine(test=True)
 
