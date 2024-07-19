@@ -11,6 +11,7 @@ from std_msgs.msg import String
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 from geometry_msgs.msg import PoseStamped, Point
+from std_srvs.srv import SetBool
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -102,6 +103,10 @@ class ShowTabletActionServer(Node):
         self.srv_plan_tablet_pose = self.create_client(
             PlanTabletPose, 'plan_tablet_pose')
         
+        self.srv_toggle_detection = self.create_client(
+            SetBool, '/detection/toggle'
+        )
+        
         # motion
         self.arm_client = ActionClient(
             self,
@@ -167,7 +172,7 @@ class ShowTabletActionServer(Node):
         # construct request
         request.human_joint_dict = body_string
         request.camera_pose = generate_pose_stamped(camera_position, camera_orientation, self.now())
-        request.robot_pose = generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.], self.now())
+        request.robot_pose = generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.], self.now())  # TODO: update this
 
         return request
     
@@ -336,6 +341,7 @@ class ShowTabletActionServer(Node):
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
 
+        self.srv_toggle_detection.call(SetBool.Request(data=True))
         self._pose_estimator_enabled = True
 
         while rclpy.ok():
@@ -343,6 +349,7 @@ class ShowTabletActionServer(Node):
                 break
 
         self._pose_estimator_enabled = False
+        self.srv_toggle_detection.call(SetBool.Request(data=False))
 
         self.human.pose_estimate = HumanPoseEstimate.average_pose_estimates(self.get_pose_history())
         self.set_human_camera_pose(self.lookup_camera_pose())
