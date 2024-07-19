@@ -9,6 +9,7 @@ import cv2
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_msgs.msg import Bool, String
 from visualization_msgs.msg import MarkerArray
+from std_srvs.srv import SetBool
 from stretch_deep_perception import detection_2d_to_3d as d2
 
 import json
@@ -29,10 +30,13 @@ class ToggleableDetectionNode(DetectionNode):
                         topic_base_name, fit_plane, min_box_side_m,
                         max_box_side_m, modify_3d_detections)
         
-        self.toggled_on = True
+        self.toggled_on = False
 
-    def callback_toggle(self, msg: Bool):
-        self.toggled_on = msg.data
+    def toggle_callback(self, req: SetBool.Request, res: SetBool.Response):
+        self.get_logger().info(f"Toggle detection service: {req.data}")
+        self.toggled_on = req.data
+        res.success = True
+        return res
 
     def image_callback(self, ros_rgb_image, ros_depth_image, rgb_camera_info):
         if not self.toggled_on:
@@ -57,8 +61,10 @@ class ToggleableDetectionNode(DetectionNode):
         ############
         
         if time_diff > 0.0001:
-            self.logger.info('WARNING: The rgb image and the depth image were not taken at the same time.')
-            self.logger.info('         The time difference between their timestamps =', time_diff, 's')
+            self.logger.warn((
+                'The rgb image and the depth image were not taken at the same time. '
+                f'The time difference between their timestamps = {time_diff} s'
+            ), throttle_duration_sec=1.0)
 
         # Rotate the image by 90deg to account for camera
         # orientation. In the future, this may be performed at the
@@ -76,11 +82,11 @@ class ToggleableDetectionNode(DetectionNode):
 
         if debug_output: 
             self.logger.info('DetectionNode.image_callback: processed image with deep network!')
-            self.logger.info('DetectionNode.image_callback: output_image.shape =', output_image.shape)
+            self.logger.info(f'DetectionNode.image_callback: output_image.shape = {output_image.shape}')
             cv2.imwrite('./output_images/deep_learning_output_' + str(self.image_count).zfill(4) + '.png', output_image)
 
         if output_image is not None:
-            output_image = ros2_numpy.msgify(Image, output_image, encoding='rgb8')
+            output_image = ros2_numpy.msgify(Image, output_image, encoding='bgr8')
             if output_image is not None:
                 self.visualize_object_detections_pub.publish(output_image)
 
@@ -96,6 +102,8 @@ class ToggleableDetectionNode(DetectionNode):
         else:
             landmarks_3d = None
         landmark_string = String()
+        # TODO: Make this properly formatted JSON data here, so the subscriber doesn't
+        # have to jump through hoops to parse it.
         landmark_string.data = json.dumps(str(landmarks_3d))
         self.landmark_3d_pub.publish(landmark_string)
         
@@ -154,12 +162,12 @@ class ToggleableDetectionNode(DetectionNode):
         self.visualize_axes_pub = self.node.create_publisher(MarkerArray, '/' + self.topic_base_name + '/axes', 1)
         self.visualize_point_cloud_pub = self.node.create_publisher(PointCloud2, '/' + self.topic_base_name + '/point_cloud2', 1)
 
-        self.visualize_object_detections_pub = self.node.create_publisher(Image, '/' + self.topic_base_name + '/color/image_with_bb', 1)
+        self.visualize_object_detections_pub = self.node.create_publisher(Image, '/' + self.topic_base_name + '/color/image_with_bb', qos_profile=QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
 
         self.landmark_3d_pub = self.node.create_publisher(String, '/' + self.topic_base_name + '/landmarks_3d', 1)
 
         # toggle
-        self.toggle_sub = self.node.create_subscription(Bool, topic="/detection/toggle", callback=self.callback_toggle, qos_profile=1)
+        self.toggle_service = self.node.create_service(SetBool, "/detection/toggle", self.toggle_callback)
 
         try:
             rclpy.spin(self.node)
