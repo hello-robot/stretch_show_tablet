@@ -1,6 +1,7 @@
 # Request
-string human_joint_dict
-geometry_msgs/PoseStamped camera_pose
+int32 DEFAULT_N_ESTIMATES = 10
+
+int32 number_of_pose_estimates
 
 ---
 # Result
