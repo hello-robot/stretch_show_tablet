@@ -69,9 +69,12 @@ class EstimatePoseActionServer(Node):
             # remove points that are adjacent to the camera
             filtered_human_estimate = {}
             for k in latest_human.body_estimate.keys():
-                point = latest_human.body_estimate[k]
-                if np.linalg.norm(point) > 0.02:
-                    filtered_human_estimate[k] = point
+                try:
+                    point = latest_human.body_estimate[k]
+                    if np.linalg.norm(point) > 0.02:
+                        filtered_human_estimate[k] = point
+                except KeyError:
+                    pass
 
             latest_human.set_body_estimate(filtered_human_estimate)
 
@@ -90,12 +93,10 @@ class EstimatePoseActionServer(Node):
         self._latest_human_pose_estimate.set_body_estimate(data)
 
     def callback_action_cancel(self, goal_handle: ServerGoalHandle):
-        self.cleanup()
         return CancelResponse.ACCEPT
     
     def execute_callback(self, goal_handle: ServerGoalHandle):
         self.get_logger().info('Executing Estimate Pose...')
-        self.goal_handle = goal_handle
         n_samples = goal_handle.request.number_of_samples
 
         # ROS Action stuff
@@ -175,7 +176,12 @@ class EstimatePoseActionServer(Node):
         i = 0
         pose_estimates = [HumanPoseEstimate() for _ in range(n_samples)]
 
-        while i < n_samples:
+        while i < n_samples and rclpy.ok():
+            if goal_handle.is_cancel_requested:
+                self.cleanup()
+                goal_handle.canceled()
+                break
+
             feedback.number_of_samples_read = i
             goal_handle.publish_feedback(feedback)
             latest_pose = self.get_latest_human_pose_estimate(filter_bad_points=True)
@@ -205,19 +211,19 @@ class EstimatePoseActionServer(Node):
             i = i + 1
             rate.sleep()
 
+        populated = i >= n_samples
+
         # compute average estimate
-        average_pose_estimate = HumanPoseEstimate.average_pose_estimates(pose_estimates)
-        return average_pose_estimate
+        if populated:
+            average_pose_estimate = HumanPoseEstimate.average_pose_estimates(pose_estimates)
+            return average_pose_estimate
+        else:
+            return HumanPoseEstimate()
 
     # main
     def main(self):
         executor = MultiThreadedExecutor()
-
-        action_server = EstimatePoseActionServer()
-
-        rclpy.spin(action_server, executor=executor)
-
-        action_server.destroy()
+        rclpy.spin(self, executor=executor)
 
 def main():
     rclpy.init()
