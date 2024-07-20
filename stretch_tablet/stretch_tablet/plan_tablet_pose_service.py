@@ -16,6 +16,18 @@ import time
 
 from stretch_tablet.utils_ros import point2tuple, quat2tuple, generate_pose_stamped
 
+# TODO: I got the below error somewhere in the service callback which caused the node to crash.
+# Errors like this should get caught and the service should cleanly return a failure response.
+# [plan_tablet_pose_service-29] /home/hello-robot/ament_ws/install/stretch_tablet/lib/python3.10/site-packages/stretch_tablet/planner.py:87: RuntimeWarning: invalid value encountered in divide
+# [plan_tablet_pose_service-29]   x = x / np.linalg.norm(x)
+# [plan_tablet_pose_service-29] /home/hello-robot/ament_ws/install/stretch_tablet/lib/python3.10/site-packages/stretch_tablet/planner.py:88: RuntimeWarning: invalid value encountered in divide
+# [plan_tablet_pose_service-29]   y = y / np.linalg.norm(y)
+# [plan_tablet_pose_service-29] Sophus ensure failed in function 'Sophus::SO3<Scalar_, Options>::SO3(const Transformation&) [with Scalar_ = double; int Options = 0; Sophus::SO3<Scalar_, Options>::Transformation = Eigen::Matrix<double, 3, 3>]', file 'sophuspy/include/original/so3.hpp', line 424.
+# [plan_tablet_pose_service-29] R is not orthogonal:
+# [plan_tablet_pose_service-29]  -nan -nan -nan
+# [plan_tablet_pose_service-29] -nan -nan -nan
+# [plan_tablet_pose_service-29] -nan -nan -nan
+
 class PlanTabletPoseService(Node):
     def __init__(self):
         super().__init__('minimal_service')
@@ -76,8 +88,9 @@ class PlanTabletPoseService(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    service = PlanTabletPoseService()
-    rclpy.spin(service)
+    node = PlanTabletPoseService()
+    node.get_logger().info('Plan Tablet Pose Service has been started.')
+    rclpy.spin(node)
 
     rclpy.shutdown()
 

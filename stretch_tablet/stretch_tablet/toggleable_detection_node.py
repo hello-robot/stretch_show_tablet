@@ -36,6 +36,8 @@ class ToggleableDetectionNode(DetectionNode):
         self.logger.info(f"Toggle detection service: {req.data}")
         self.toggled_on = req.data
         res.success = True
+        res.message = "Detection toggled on" if req.data else "Detection toggled off"
+        self.logger.info(f"Toggle detection service returning {res}")
         return res
 
     def image_callback(self, ros_rgb_image, ros_depth_image, rgb_camera_info):
@@ -102,9 +104,7 @@ class ToggleableDetectionNode(DetectionNode):
         else:
             landmarks_3d = None
         landmark_string = String()
-        # TODO: Make this properly formatted JSON data here, so the subscriber doesn't
-        # have to jump through hoops to parse it.
-        landmark_string.data = json.dumps(str(landmarks_3d))
+        landmark_string.data = json.dumps(landmarks_3d)
         self.landmark_3d_pub.publish(landmark_string)
         
         marker_array = self.marker_collection.get_ros_marker_array(self.landmark_color_dict)
@@ -167,7 +167,7 @@ class ToggleableDetectionNode(DetectionNode):
         self.landmark_3d_pub = self.node.create_publisher(String, '/' + self.topic_base_name + '/landmarks_3d', 1)
 
         # toggle
-        self.toggle_service = self.node.create_service(SetBool, "/detection/toggle", self.toggle_callback)
+        self.toggle_service = self.node.create_service(SetBool, '/' + self.topic_base_name + "/detection/toggle", self.toggle_callback)
 
         try:
             rclpy.spin(self.node)

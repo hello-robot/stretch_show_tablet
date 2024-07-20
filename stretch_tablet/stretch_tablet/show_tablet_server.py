@@ -25,6 +25,8 @@ from stretch_tablet_interfaces.action import ShowTablet
 
 from enum import Enum
 import json
+import threading
+from typing import Callable, Optional
 
 from stretch_tablet.utils import load_bad_json_data
 from stretch_tablet.utils_ros import generate_pose_stamped
@@ -73,16 +75,21 @@ class ShowTabletState(Enum):
     ABORT = 99
     ERROR = -1
 
+# TODO: This node doesn't cleanly handle keyboard interrupts while the action is executing
+# (I noticed it when it was waiting for the plan tablet pose service), but it should.
+
+# TODO: I've implemented some cancellation logic, but it should be tested more thoroughly.
+# Ideally, every function, loop, and blocking call should be checking for cancellations.
+# And cancellations should be passed down to any other ROS services or actions that are
+# being called.
+
 class ShowTabletActionServer(Node):
     def __init__(self):
         super().__init__('show_tablet_action_server')
-        self._action_server = ActionServer(
-            self,
-            ShowTablet,
-            'show_tablet',
-            self.execute_callback,
-            callback_group=ReentrantCallbackGroup(),
-            cancel_callback=self.callback_action_cancel)
+
+        # Store the latest average pose estimate.
+        # TODO: Also store the timestamp this was computed at.
+        self.latest_average_pose = None
         
         # pub
         self.pub_valid_estimates = self.create_publisher(
@@ -96,15 +103,24 @@ class ShowTabletActionServer(Node):
             String,
             "/body_landmarks/landmarks_3d",
             callback=self.callback_body_landmarks,
-            qos_profile=1
+            qos_profile=1,
+            callback_group=MutuallyExclusiveCallbackGroup(),
         )
 
-        # srv
+        # Toggle on/off person detection
+        self.toggle_service_timeout = 2.0  # secs
+        self.toggle_service = self.create_service(
+            SetBool, "/toggle_body_pose_estimator", self.toggle_body_pose_estimator_callback,
+            callback_group=MutuallyExclusiveCallbackGroup(),
+        )
+
+        # srv clients
         self.srv_plan_tablet_pose = self.create_client(
-            PlanTabletPose, 'plan_tablet_pose')
+            PlanTabletPose, 'plan_tablet_pose', callback_group=MutuallyExclusiveCallbackGroup()
+        )
         
         self.srv_toggle_detection = self.create_client(
-            SetBool, '/detection/toggle'
+            SetBool, '/body_landmarks/detection/toggle', callback_group=MutuallyExclusiveCallbackGroup()
         )
         
         # motion
@@ -118,9 +134,6 @@ class ShowTabletActionServer(Node):
         # tf
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(buffer=self.tf_buffer, node=self)
-
-        # guts
-        self.executor = MultiThreadedExecutor()
         
         # state
         self.feedback = ShowTablet.Feedback()
@@ -132,18 +145,34 @@ class ShowTabletActionServer(Node):
         self._pose_history = []
 
         self._robot_joint_target = None
+        self._pose_estimator_enabled_lock = threading.Lock()
         self._pose_estimator_enabled = False
 
         # config
         self._robot_move_time_s = 4.
         self._n_poses = 10
 
+        # Create the shared resource to ensure that the action server rejects all
+        # new goals while a goal is currently active.
+        self.active_goal_request_lock = threading.Lock()
+        self.active_goal_request = None
+
+        # Create the action server
+        self._action_server = ActionServer(
+            self,
+            ShowTablet,
+            'show_tablet',
+            self.execute_callback,
+            callback_group=ReentrantCallbackGroup(),
+            cancel_callback=self.callback_action_cancel,
+            goal_callback=self.callback_action_goal,
+        )
+
     # helpers
     def now(self) -> Time:
         return self.get_clock().now().to_msg()
     
     def get_pose_history(self, max_age=float("inf")):
-        # TODO: check if this boi is stale
         return [p for (p, t) in self._pose_history]
 
     def set_human_camera_pose(self, world2camera_pose: PoseStamped):
@@ -214,6 +243,43 @@ class ShowTabletActionServer(Node):
         while len(self._pose_history) > self._n_poses:
             self._pose_history.pop(0)
 
+    def __wait_for_future(
+        self, 
+        future, 
+        rate_hz: float = 10.0,
+        timeout: Optional[Duration] = None,
+        check_termination: Optional[Callable] = None,
+    ) -> bool:
+        """
+        Wait for a future to complete.
+
+        Parameters
+        ----------
+        future: The future to wait for.
+        rate_hz: The rate at which to check the future.
+        timeout: The maximum time to wait for the future to complete.
+
+        Returns
+        -------
+        bool: True if the future completed, False otherwise.
+        """
+        # TODO: The timeout should be required, not optional!
+        start_time = self.get_clock().now()
+        rate = self.create_rate(rate_hz)
+        while rclpy.ok() and not future.done():
+            # Check if the goal has been canceled
+            if check_termination is not None and check_termination():
+                return False
+
+            # Check timeout
+            if timeout is not None and (self.get_clock().now() - start_time) > timeout:
+                self.get_logger().error("Timeout exceeded!")
+                return False
+            
+            self.get_logger().debug("Waiting for future...", throttle_duration_sec=1.0)
+            rate.sleep()
+        return future.done()
+
     def __move_to_pose(self, joint_dict: dict, blocking: bool=True):
         joint_names = [k for k in joint_dict.keys()]
         joint_positions = [v for v in joint_dict.values()]
@@ -226,10 +292,20 @@ class ShowTabletActionServer(Node):
         trajectory.trajectory.points[0].time_from_start = Duration(seconds=self._robot_move_time_s).to_msg()
 
         future = self.arm_client.send_goal_async(trajectory)
-        rclpy.spin_until_future_complete(self, future, executor=self.executor)
-        if blocking:
-            goal_handle = future.result().get_result_async()
-            rclpy.spin_until_future_complete(self, goal_handle, executor=self.executor)
+        future_finished = self.__wait_for_future(
+            future, 
+            check_termination=lambda: self.goal_handle.is_cancel_requested,
+        )   # TODO: add a timeout!
+        if blocking and future_finished:
+            goal_handle = future.result()
+            get_result_future = goal_handle.get_result_async()
+            future_finished = self.__wait_for_future(
+                get_result_future, 
+                check_termination=lambda: self.goal_handle.is_cancel_requested,
+            )  # TODO: add a timeout!
+            if not future_finished and self.goal_handle.is_cancel_requested:
+                future = goal_handle.cancel_goal()
+                self.__wait_for_future(future)  # TODO: add a timeout!
 
     def __present_tablet(self, joint_dict: dict):
         pose_tuck = {
@@ -264,8 +340,53 @@ class ShowTabletActionServer(Node):
         self.__move_to_pose(pose_wrist, blocking=True)
 
     # callbacks
+    def toggle_body_pose_estimator_callback(
+        self, 
+        request: SetBool.Request, 
+        response: SetBool.Response,
+    ) -> SetBool.Response:
+        self.get_logger().info(f"Received toggle request: {request.data}")
+        start_time = self.get_clock().now()
+
+        # Check if the body pose estimator service is available
+        if not self.srv_toggle_detection.wait_for_service(timeout_sec=self.toggle_service_timeout):
+            self.get_logger().error("Toggle service not available!")
+            response.success = False
+            response.message = "Toggle body pose estimation service not available"
+            return response
+
+        # Toggle on/off the body pose estimator service
+        future = self.srv_toggle_detection.call_async(SetBool.Request(data=request.data))
+        future_finished = self.__wait_for_future(future, timeout=(self.get_clock().now() - start_time))
+        if not future_finished:
+            self.get_logger().error("Toggle service call failed or timed out!")
+            response.success = False
+            response.message = "Toggle body pose estimation service call failed or timed out"
+            return response
+
+        # Verify the response
+        toggle_service_response = future.result()
+        if not toggle_service_response.success:
+            self.get_logger().error("Toggle service call was not successful!")
+            response.success = False
+            response.message = "Toggle body pose estimation service call failed or timed out"
+            return response
+
+        # Enable or disable the body pose estimator
+        with self._pose_estimator_enabled_lock:
+            self._pose_estimator_enabled = request.data
+        self._pose_history = []
+
+        # Return success
+        response.success = True
+        response.message = "Success"
+        return response
+
     def callback_body_landmarks(self, msg: String):
-        if self._pose_estimator_enabled:
+        self.get_logger().debug("Received body landmarks...", throttle_duration_sec=1.0)
+        with self._pose_estimator_enabled_lock:
+            pose_estimator_enabled = self._pose_estimator_enabled
+        if pose_estimator_enabled:
             # config
             necessary_keys = [
                 "nose",
@@ -275,11 +396,14 @@ class ShowTabletActionServer(Node):
             ]
         
             # Load data
-            msg_data = msg.data.replace("\"", "")
-            if msg_data == "None" or msg_data is None:
+            # msg_data = msg.data.replace("\"", "")
+            # if msg_data == "None" or msg_data is None:
+            #     return
+            if len(msg.data) == 0:
                 return
 
-            data = load_bad_json_data(msg_data)
+            # data = load_bad_json_data(msg_data)
+            data = json.loads(msg.data)
 
             if data is None or data == "{}":
                 return
@@ -306,8 +430,9 @@ class ShowTabletActionServer(Node):
             # self.pub_valid_estimates.publish(String(data=msg_data))
             self.__push_to_pose_history(latest_pose)
 
-            average_pose = HumanPoseEstimate.average_pose_estimates(self.get_pose_history())
-            pose_str = average_pose.get_body_estimate_string()
+            # TODO: Add a timestamp associated with the latest average pose.
+            self.latest_average_pose = HumanPoseEstimate.average_pose_estimates(self.get_pose_history())
+            pose_str = self.latest_average_pose.get_body_estimate_string()
             self.pub_valid_estimates.publish(String(data=pose_str))
 
     # action callbacks
@@ -316,7 +441,43 @@ class ShowTabletActionServer(Node):
     #     self.result.status = ShowTablet.Result.STATUS_SUCCESS
     #     return ShowTablet.Result()
 
+    def callback_action_goal(self, goal_request: ShowTablet.Goal) -> GoalResponse:
+        """
+        Accept a goal if this action does not already have an active goal, else reject.
+
+        Parameters
+        ----------
+        goal_request: The goal request message.
+        """
+        self.get_logger().info(f"Received request {goal_request}")
+
+        # Reject the goal if we don't have a valid pose estimate
+        if self.latest_average_pose is None:
+            self.get_logger().info(
+                "Rejecting goal request since there is no valid pose estimate. "
+                "Be sure to toggle detection on and ensure at least one message is "
+                "sent on the /human_estimates/latest_body_pose topic before calling "
+                "this action server."
+            )
+            return GoalResponse.REJECT
+
+        # TODO: Reject the goal if the latest average pose is stale e.g., computed too long ago.
+
+        # Reject the goal is there is already an active goal
+        with self.active_goal_request_lock:
+            if self.active_goal_request is not None:
+                self.get_logger().info(
+                    "Rejecting goal request since there is already an active one"
+                )
+                return GoalResponse.REJECT
+
+        # Accept the goal
+        self.get_logger().info("Accepting goal request")
+        self.active_goal_request = goal_request
+        return GoalResponse.ACCEPT
+
     def callback_action_cancel(self, goal_handle):
+        self.get_logger().info("Received cancel request, accepting")
         self.cleanup()
         self.result.status = ShowTablet.Result.STATUS_CANCELED
         return CancelResponse.ACCEPT
@@ -338,27 +499,26 @@ class ShowTabletActionServer(Node):
         return ShowTabletState.ESTIMATE_HUMAN_POSE
     
     def state_estimate_pose(self):
+        self.get_logger().info("Estimating pose...")
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
 
-        self.srv_toggle_detection.call(SetBool.Request(data=True))
-        self._pose_estimator_enabled = True
-
-        while rclpy.ok():
-            if len(self._pose_history) >= self._n_poses:
-                break
-
-        self._pose_estimator_enabled = False
-        self.srv_toggle_detection.call(SetBool.Request(data=False))
-
-        self.human.pose_estimate = HumanPoseEstimate.average_pose_estimates(self.get_pose_history())
+        # Because the goal was accepted, we are guarenteed to have a non-None
+        # `self.latest_average_pose` that is not stale (TODO).
+        self.human.pose_estimate = self.latest_average_pose
         self.set_human_camera_pose(self.lookup_camera_pose())
 
         return ShowTabletState.PLAN_TABLET_POSE
 
     def state_plan_tablet_pose(self):
+        self.get_logger().info("Planning tablet pose...")
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
+
+        # Check if the service is available
+        if not self.srv_plan_tablet_pose.wait_for_service(timeout_sec=1.0):
+            self.get_logger().error("Service not available!")
+            return ShowTabletState.ERROR
         
         # if not self.human.pose_estimate.is_populated():
             # Human not seen
@@ -368,15 +528,11 @@ class ShowTabletActionServer(Node):
         future = self.srv_plan_tablet_pose.call_async(plan_request)
 
         # wait for srv to finish
-        while rclpy.ok():
-            rclpy.spin_once(self)
-            if future.done():
-                try:
-                    response = future.result()
-                except Exception as e:
-                    self.get_logger().info(
-                        'Service call failed %r' % (e,))
-                break
+        self.get_logger().info("Waiting for srv to finish...")
+        self.__wait_for_future(future)
+        self.get_logger().info("Srv finished!")
+        response = future.result()
+        self.get_logger().info(f"Response received! {response} {type(response)}")
 
         if response.success:
             # get planner result
@@ -410,6 +566,7 @@ class ShowTabletActionServer(Node):
         return ShowTabletState.MOVE_ARM_TO_TABLET_POSE
     
     def state_move_arm_to_tablet_pose(self):
+        self.get_logger().info("Moving arm to tablet pose...")
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
 
@@ -420,6 +577,7 @@ class ShowTabletActionServer(Node):
         return ShowTabletState.EXIT
 
     def state_end_interaction(self):
+        self.get_logger().info("Ending interaction...")
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
 
@@ -434,14 +592,17 @@ class ShowTabletActionServer(Node):
         return ShowTabletState.EXIT
 
     def run_state_machine(self, test:bool=False):
+        self.get_logger().info("Running state machine...")
         state = self.state_idle()
 
         while rclpy.ok():
+            self.get_logger().info(f"Current state: {state.name}")
+            # TODO: Handle ERROR and ABORT better. Currently ERROR loops
+            # back to IDLE, and ABORT sets the result to SUCCESS.
             # check abort
             if state == ShowTabletState.ABORT:
                 state = self.state_abort()
                 break
-
             # main state machine
             elif state == ShowTabletState.IDLE:
                 state = self.state_idle()
@@ -471,6 +632,7 @@ class ShowTabletActionServer(Node):
         return self.result
 
     def execute_callback(self, goal_handle):
+        # TODO: Add a timeout!
         self.get_logger().info('Executing Show Tablet...')
         self.goal_handle = goal_handle
 
@@ -494,17 +656,23 @@ class ShowTabletActionServer(Node):
         else:
             raise ValueError
         
-        self.get_logger().info(str(final_result))
+        self.get_logger().info(f"Final result: {final_result}")
+        self.active_goal_request = None
         return final_result
 
 
 def main(args=None):
     rclpy.init(args=args)
 
+    # Initialize the action server
+    show_tablet_action_server = ShowTabletActionServer()
+    show_tablet_action_server.get_logger().info("ShowTabletActionServer initialized")
+
     # Use a MultiThreadedExecutor to enable processing goals concurrently
     executor = MultiThreadedExecutor()
-    show_tablet_action_server = ShowTabletActionServer()
     rclpy.spin(show_tablet_action_server, executor=executor)
+
+    # Cleanup
     show_tablet_action_server.destroy()
 
 
