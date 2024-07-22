@@ -11,7 +11,7 @@ from std_msgs.msg import String
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 from geometry_msgs.msg import PoseStamped, Point
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
@@ -29,7 +29,7 @@ import threading
 from typing import Callable, Optional
 
 from stretch_tablet.utils import load_bad_json_data
-from stretch_tablet.utils_ros import generate_pose_stamped
+from stretch_tablet.utils_ros import generate_pose_stamped, posestamped2se3
 from stretch_tablet.human import Human, HumanPoseEstimate
 
 # testing
@@ -122,6 +122,14 @@ class ShowTabletActionServer(Node):
         self.srv_toggle_detection = self.create_client(
             SetBool, '/body_landmarks/detection/toggle', callback_group=MutuallyExclusiveCallbackGroup()
         )
+
+        self.srv_toggle_position_mode = self.create_client(
+            Trigger, '/switch_to_position_mode', callback_group=MutuallyExclusiveCallbackGroup()
+        )
+
+        self.srv_toggle_navigation_mode = self.create_client(
+            Trigger, '/switch_to_navigation_mode', callback_group=MutuallyExclusiveCallbackGroup()
+        )
         
         # motion
         self.arm_client = ActionClient(
@@ -175,15 +183,6 @@ class ShowTabletActionServer(Node):
     def get_pose_history(self, max_age=float("inf")):
         return [p for (p, t) in self._pose_history]
 
-    def set_human_camera_pose(self, world2camera_pose: PoseStamped):
-        # unpack camera pose
-        camera_pos = world2camera_pose.pose.position
-        camera_ori = world2camera_pose.pose.orientation
-        camera_position = np.array([camera_pos.x, camera_pos.y, camera_pos.z])
-        camera_orientation = R.from_quat([camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]).as_matrix()
-        world2camera_pose = sp.SE3(camera_orientation, camera_position)
-        self.human.pose_estimate.set_camera_pose(world2camera_pose)
-
     def build_tablet_pose_request(self):
         request = PlanTabletPose.Request()
         human = self.human
@@ -192,16 +191,8 @@ class ShowTabletActionServer(Node):
             self.get_logger().error("ShowTabletActionServer::build_tablet_pose_request: self.human empty!")
             return request
 
-        # extract request info
-        body_string = json.dumps(human.pose_estimate.body_estimate)
-        camera_pose = human.pose_estimate.get_camera_pose()
-        camera_position = camera_pose.translation()
-        camera_orientation = R.from_matrix(camera_pose.rotationMatrix()).as_quat()
-
         # construct request
-        request.human_joint_dict = body_string
-        request.camera_pose = generate_pose_stamped(camera_position, camera_orientation, self.now())
-        request.robot_pose = generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.], self.now())  # TODO: update this
+        request.human_joint_dict_robot_frame = human.pose_estimate.get_body_estimate_string()
 
         return request
     
@@ -334,11 +325,13 @@ class ShowTabletActionServer(Node):
         }
 
         # sequence
+        self.srv_toggle_position_mode.call(Trigger.Request())
+
         self.__move_to_pose(pose_tuck, blocking=True)
         self.__move_to_pose(pose_base, blocking=True)
         self.__move_to_pose(pose_arm, blocking=True)
         self.__move_to_pose(pose_wrist, blocking=True)
-
+        
     # callbacks
     def toggle_body_pose_estimator_callback(
         self, 
@@ -403,17 +396,19 @@ class ShowTabletActionServer(Node):
                 return
 
             # data = load_bad_json_data(msg_data)
-            data = json.loads(msg.data)
+            pose_camera_frame = json.loads(msg.data)
 
-            if data is None or data == "{}":
+            if pose_camera_frame is None or len(pose_camera_frame.keys()) == 0:
                 return
             
             # populate pose
+            camera_pose = self.lookup_camera_pose()
+            camera_pose = posestamped2se3(camera_pose)
             latest_pose = HumanPoseEstimate()
-            latest_pose.set_body_estimate(data)
+            latest_pose.set_body_estimate_camera_frame(pose_camera_frame, camera_pose)
 
             # get visible keypoints
-            pose_keys = latest_pose.body_estimate.keys()
+            pose_keys = latest_pose.get_body_estimate_robot_frame().keys()
 
             # check if necessary keys visible
             can_see = True
@@ -432,7 +427,8 @@ class ShowTabletActionServer(Node):
 
             # TODO: Add a timestamp associated with the latest average pose.
             self.latest_average_pose = HumanPoseEstimate.average_pose_estimates(self.get_pose_history())
-            pose_str = self.latest_average_pose.get_body_estimate_string()
+            # pose_str = self.latest_average_pose.get_body_estimate_string()
+            pose_str = json.dumps(pose_camera_frame)
             self.pub_valid_estimates.publish(String(data=pose_str))
 
     # action callbacks
@@ -506,7 +502,6 @@ class ShowTabletActionServer(Node):
         # Because the goal was accepted, we are guarenteed to have a non-None
         # `self.latest_average_pose` that is not stale (TODO).
         self.human.pose_estimate = self.latest_average_pose
-        self.set_human_camera_pose(self.lookup_camera_pose())
 
         return ShowTabletState.PLAN_TABLET_POSE
 
@@ -580,6 +575,8 @@ class ShowTabletActionServer(Node):
         self.get_logger().info("Ending interaction...")
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
+
+        self.srv_toggle_navigation_mode.call(Trigger.Request())
 
         return ShowTabletState.EXIT
     

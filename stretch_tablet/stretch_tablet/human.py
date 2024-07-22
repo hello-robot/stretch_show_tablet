@@ -10,9 +10,22 @@ import matplotlib.pyplot as plt
 
 EPS = 10.e-9
 
+# helpers
+def transform_estimate_dict(estimate: dict, camera_pose: sp.SE3):
+    """
+    Transforms points contained in a dictionary {point_name: [x, y, z]} by the pose of the camera.
+    """
+    points = np.array([v for v in estimate.values()])
+    transformed_points = sp.transform_points_by_poses(camera_pose.matrix3x4().ravel(), points)
+    transformed_estimate = {k: v for (k, v) in zip(estimate.keys(), transformed_points)}
+    return transformed_estimate
+
 # objects
 class HumanKinematics:
     def __init__(self):
+        """
+        TODO: use this for something useful...
+        """
         # transforms
         self.root = sp.SE3()
         self.root2l_shoulder_pose = sp.SE3()
@@ -24,21 +37,37 @@ class HumanKinematics:
 
 class HumanPoseEstimate:
     def __init__(self):
-        self.world2camera_pose = sp.SE3()
-        self.body_estimate = None
-        self.body_points = None
-        self.face_estimate = None
-        self.face_points = None
+        self.body_estimate_robot_frame = None
+        self.face_estimate_robot_frame = None
 
     def load_face_estimate(self, file):
+        """
+        Helper function for loading a human face estimate saved by record_test_data.py
+        TODO: refactor!
+        """
+        raise NotImplementedError
         data = load_bad_json(file)
         self.set_face_estimate(data)
 
-    def set_face_estimate(self, data):
-        self.face_estimate = data
-        self.face_points = np.array([v for v in data.values()]).T
+    def set_face_estimate_robot_frame(self, face_data: dict):
+        self.face_estimate_robot_frame = face_data
+
+    def set_face_estimate_camera_frame(self, face_data: dict, camera_pose: sp.SE3):
+        """
+        Sets face estimate.
+        
+        Args:
+            face_data (dict): face points in camera frame {point_name: position}
+            camera_pose (sp.SE3): camera pose relative to robot's base_link
+        """
+        self.face_estimate_robot_frame = transform_estimate_dict(face_data, camera_pose)
 
     def load_body_estimate(self, file):
+        """
+        Helper function for loading a human pose estimate saved by record_test_data.py
+        TODO: refactor!
+        """
+        raise NotImplementedError
         data = load_bad_json(file)
         self.set_body_estimate(data)
 
@@ -49,83 +78,88 @@ class HumanPoseEstimate:
 
         print("Cannot see: " + str(not_visible))
 
-    def set_body_estimate(self, data: dict):
-        self.body_estimate = data
-        self.body_points = np.array([v for v in data.values()]).T
+    def set_body_estimate_robot_frame(self, body_data: dict):
+        self.body_estimate_robot_frame = body_data
 
-    def get_body_estimate_string(self):
-        if self.body_estimate is not None:
-            return json.dumps(self.body_estimate)
+    def get_body_estimate_robot_frame(self):
+        return self.body_estimate_robot_frame
+
+    def set_body_estimate_camera_frame(self, body_data: dict, camera_pose: sp.SE3):
+        """
+        Sets body estimate.
+        
+        Args:
+            body_data (dict): body points in camera frame {point_name: position}
+            camera_pose (sp.SE3): camera pose relative to robot's base_link
+        """
+        
+        self.body_estimate_robot_frame = transform_estimate_dict(body_data, camera_pose)
+
+    def get_body_estimate_string(self) -> str:
+        """
+        Dumps the current body pose estimate in robot frame to a string.
+        """
+        if self.body_estimate_robot_frame is not None:
+            return json.dumps(self.body_estimate_robot_frame)
         else:
             return None
-
-    def load_camera_pose(self, camera_file):
-        with open(camera_file) as f:
-            data = json.load(f)
-
-        position = np.array(data[0])
-        quaternion = np.array(data[1])
-
-        rotation_matrix = R.from_quat(quaternion).as_matrix()
-
-        # NOTE: this is backwards bc test code is wrong
-        camera2world_pose = sp.SE3(rotation_matrix, position.T)
-        self.set_camera_pose(camera2world_pose.inverse())
-
-    def set_camera_pose(self, world2camera_pose: sp.SE3):
-        self.world2camera_pose = world2camera_pose
-
-    def get_camera_pose(self) -> sp.SE3:
-        return self.world2camera_pose
+        
+    def get_body_points(self) -> np.ndarray:
+        """
+        Returns body poes points in robot frame.
+        """
+        if self.body_estimate_robot_frame is not None:
+            return np.array([v for v in self.body_estimate_robot_frame.values()])
 
     def clear_estimates(self):
-        self.body_estimate = None
-        self.body_points = None
-        self.face_estimate = None
-        self.face_points = None
+        """
+        Helper to clear the state of the object
+        """
+        self.body_estimate_robot_frame = None
+        self.face_estimate_robot_frame = None
 
     def is_body_populated(self):
-        return True if self.body_estimate is not None and self.body_points is not None else False
+        return self.body_estimate_robot_frame is not None
     
     def is_face_populated(self):
-        return True if self.face_estimate is not None and self.face_points is not None else False
+        return self.face_estimate_robot_frame is not None
 
     def is_populated(self):
         self.is_body_populated() and self.is_face_populated()
 
-    def get_point_world(self, point):
-        point = np.array(point).T
+    # def get_point_world(self, point):
+    #     point = np.array(point).T
     
-        point_world = sp.transform_points_by_poses(self.world2camera_pose.matrix3x4().ravel(), point).T
-        return point_world
+    #     point_world = sp.transform_points_by_poses(self.robot2camera_pose.matrix3x4().ravel(), point).T
+    #     return point_world
 
-    def get_face_world(self):
-        if self.face_points is None:
-            raise ValueError
+    # def get_face_world(self):
+    #     if self.face_points is None:
+    #         raise ValueError
         
-        world_points = sp.transform_points_by_poses(self.world2camera_pose.matrix3x4().ravel(), self.face_points.T).T
-        return world_points
+    #     world_points = sp.transform_points_by_poses(self.robot2camera_pose.matrix3x4().ravel(), self.face_points.T).T
+    #     return world_points
     
-    def get_body_world(self):
-        if self.body_points is None:
-            raise ValueError
+    # def get_body_world(self):
+    #     if self.body_points is None:
+    #         raise ValueError
         
-        world_points = sp.transform_points_by_poses(self.world2camera_pose.matrix3x4().ravel(), self.body_points.T).T
-        return world_points
+    #     world_points = sp.transform_points_by_poses(self.robot2camera_pose.matrix3x4().ravel(), self.body_points.T).T
+        # return world_points
     
     @staticmethod
     def average_pose_estimates(pose_estimates: list):
         # get pose keys
         unique_keys = []
         for p in pose_estimates:
-            pose = p.body_estimate
+            pose = p.get_body_estimate_robot_frame()
             unique_keys = unique_keys + [k for k in pose.keys()]
             unique_keys = list(set(unique_keys))
 
         # concatenate pose estimates into one dict
         all_poses = {key: [] for key in unique_keys}
         for p in pose_estimates:
-            pose = p.body_estimate
+            pose = p.get_body_estimate_robot_frame()
             for key in pose.keys():
                 all_poses[key].append(pose[key])
 
@@ -135,7 +169,7 @@ class HumanPoseEstimate:
         }
 
         average_pose_estimate = HumanPoseEstimate()
-        average_pose_estimate.set_body_estimate(average_pose_estimate_dict)
+        average_pose_estimate.set_body_estimate_robot_frame(average_pose_estimate_dict)
 
         return average_pose_estimate
 
@@ -159,6 +193,7 @@ class Human:
             self.preferences[key] = value
 
 def generate_test_human(data_dir, i=6):
+    raise NotImplementedError
     body_path = data_dir + "body_" + str(i) + ".json"
     face_path = data_dir + "face_" + str(i) + ".json"
     camera_path = data_dir + "camera_" + str(i) + ".json"

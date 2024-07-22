@@ -1,3 +1,7 @@
+import numpy as np
+import sophuspy as sp
+from scipy.spatial.transform import Rotation as R
+
 from geometry_msgs.msg import PoseStamped, Point, Quaternion
 
 def point2tuple(p: Point):
@@ -21,3 +25,12 @@ def generate_pose_stamped(position, orientation, timestamp):
     pose_stamped.pose.orientation = quat
     pose_stamped.header.stamp = timestamp
     return pose_stamped
+
+# conversions
+def posestamped2se3(pose_stamped: PoseStamped) -> sp.SE3:
+    pos = pose_stamped.pose.position
+    ori = pose_stamped.pose.orientation
+    pos_np = np.array(point2tuple(pos))
+    ori_np = np.array(quat2tuple(ori))
+    ori_R = R.from_quat(ori_np).as_matrix()
+    return sp.SE3(ori_R, pos_np)

@@ -68,15 +68,16 @@ class TabletPlanner:
 
     @staticmethod
     def _get_shoulder_vector(human: Human) -> np.array:
-        l_shoulder = np.array(human.pose_estimate.body_estimate["left_shoulder"])
-        r_shoulder = np.array(human.pose_estimate.body_estimate["right_shoulder"])
-        l_shoulder = np.squeeze(np.array(human.pose_estimate.get_point_world(l_shoulder)))
-        r_shoulder = np.squeeze(np.array(human.pose_estimate.get_point_world(r_shoulder)))
+        l_shoulder = np.array(human.pose_estimate.body_estimate_robot_frame["left_shoulder"])
+        r_shoulder = np.array(human.pose_estimate.body_estimate_robot_frame["right_shoulder"])
         # return l_shoulder - r_shoulder
         return r_shoulder - l_shoulder
 
     @staticmethod
     def _get_head_shoulder_orientation(human: Human) -> np.ndarray:
+        """
+        Gets orientation of the human based on the human's shoulder points
+        """
         y = TabletPlanner._get_shoulder_vector(human)
         z = np.array([0, 0, 1])
         proj_z_y = vector_projection(z, y)
@@ -109,15 +110,13 @@ class TabletPlanner:
         tablet = sp.SE3(r, p)
 
         try:
-            human_head_root = human.pose_estimate.body_estimate["nose"]
+            human_head_root_robot_frame = human.pose_estimate.body_estimate_robot_frame["nose"]
         except KeyError as e:
             print("TabletPlanner::in_front_of_eyes: " + str(e))
             return None
-            
-        human_head_root_world = human.pose_estimate.get_point_world(human_head_root)
-        # r_head = [[0,-1,0], [1,0,0], [0,0,1]]
+
         r_head = TabletPlanner._get_head_shoulder_orientation(human)
-        human_head_root = sp.SE3(r_head, human_head_root_world)
+        human_head_root = sp.SE3(r_head, human_head_root_robot_frame)
 
         tablet_world = human_head_root * tablet
 
@@ -236,6 +235,39 @@ class TabletPlanner:
         position, orientation = self.ik_solver.compute_fk(q_state)
         r = R.from_quat(orientation).as_matrix()
         return sp.SE3(r, position)
+
+    def ik_robot_frame(self, robot_target: sp.SE3, debug: bool=False):
+        """
+        robot_target (sp.SE3): target in robot base frame
+        """
+        # compute IK
+        pos_desired = robot_target.translation()
+        quat_desired = R.from_matrix(robot_target.rotationMatrix()).as_quat()
+        q_soln, success, stats = self.ik_solver.compute_ik(
+            pos_desired=pos_desired,
+            quat_desired=quat_desired,
+        )
+
+        if debug:
+            pass
+
+        base_drive = q_soln[0]
+        lift = q_soln[1]
+        arm_ext = q_soln[2]
+        yaw = q_soln[3]
+        pitch = q_soln[4]
+        roll = q_soln[5]
+
+        result = {
+            "base": base_drive,
+            "lift": lift,
+            "arm_extension": arm_ext,
+            "yaw": yaw,
+            "pitch": pitch,
+            "roll": roll,
+        }
+
+        return result, stats
 
     def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3(), debug: bool=False):
         # transform target in world frame to base frame
