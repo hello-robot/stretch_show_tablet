@@ -1,3 +1,6 @@
+from __future__ import annotations
+from typing import List, Optional
+
 import numpy as np
 import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
@@ -95,7 +98,7 @@ class HumanPoseEstimate:
         
         self.body_estimate_robot_frame = transform_estimate_dict(body_data, camera_pose)
 
-    def get_body_estimate_string(self) -> str:
+    def get_body_estimate_string(self) -> Optional[str]:
         """
         Dumps the current body pose estimate in robot frame to a string.
         """
@@ -148,7 +151,7 @@ class HumanPoseEstimate:
         # return world_points
     
     @staticmethod
-    def average_pose_estimates(pose_estimates: list):
+    def average_pose_estimates(pose_estimates: List[HumanPoseEstimate]) -> HumanPoseEstimate:
         # get pose keys
         unique_keys = []
         for p in pose_estimates:
