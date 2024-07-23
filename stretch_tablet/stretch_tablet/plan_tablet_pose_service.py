@@ -4,6 +4,11 @@ from stretch_tablet_interfaces.srv import PlanTabletPose
 import rclpy
 from rclpy.node import Node
 
+from tf2_ros import StaticTransformBroadcaster
+
+from geometry_msgs.msg import TransformStamped, Transform, Vector3
+
+import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
 
 from stretch_tablet.planner import TabletPlanner
@@ -14,26 +19,37 @@ import time
 
 from stretch_tablet.utils_ros import generate_pose_stamped
 
-# TODO: I got the below error somewhere in the service callback which caused the node to crash.
-# Errors like this should get caught and the service should cleanly return a failure response.
-# [plan_tablet_pose_service-29] /home/hello-robot/ament_ws/install/stretch_tablet/lib/python3.10/site-packages/stretch_tablet/planner.py:87: RuntimeWarning: invalid value encountered in divide
-# [plan_tablet_pose_service-29]   x = x / np.linalg.norm(x)
-# [plan_tablet_pose_service-29] /home/hello-robot/ament_ws/install/stretch_tablet/lib/python3.10/site-packages/stretch_tablet/planner.py:88: RuntimeWarning: invalid value encountered in divide
-# [plan_tablet_pose_service-29]   y = y / np.linalg.norm(y)
-# [plan_tablet_pose_service-29] Sophus ensure failed in function 'Sophus::SO3<Scalar_, Options>::SO3(const Transformation&) [with Scalar_ = double; int Options = 0; Sophus::SO3<Scalar_, Options>::Transformation = Eigen::Matrix<double, 3, 3>]', file 'sophuspy/include/original/so3.hpp', line 424.
-# [plan_tablet_pose_service-29] R is not orthogonal:
-# [plan_tablet_pose_service-29]  -nan -nan -nan
-# [plan_tablet_pose_service-29] -nan -nan -nan
-# [plan_tablet_pose_service-29] -nan -nan -nan
-
 class PlanTabletPoseService(Node):
     def __init__(self):
         super().__init__('minimal_service')
         self.srv = self.create_service(PlanTabletPose, 'plan_tablet_pose', self.plan_tablet_callback)
         self.planner = TabletPlanner()
+        self.static_transform_broadcaster = StaticTransformBroadcaster(self)
 
     def now(self):
         return self.get_clock().now().to_msg()
+
+    def broadcast_static_tf(self, human_root: sp.SE3, tablet_pose: sp.SE3):
+        for pose, child_frame in zip([human_root, tablet_pose], ["human_root", "tablet_pose"]):
+            pose_msg = generate_pose_stamped(
+                pose.translation(), R.from_matrix(pose.rotationMatrix()).as_quat().tolist(), self.now()
+            )
+            pose_msg.header.frame_id = "base_link"
+
+            self.static_transform_broadcaster.sendTransform(
+                TransformStamped(
+                    header=pose_msg.header,
+                    child_frame_id=child_frame,
+                    transform=Transform(
+                        translation=Vector3(
+                            x=pose_msg.pose.position.x,
+                            y=pose_msg.pose.position.y,
+                            z=pose_msg.pose.position.z,
+                        ),
+                        rotation=pose_msg.pose.orientation,
+                    ),
+                )
+            )
 
     def plan_tablet_callback(self, request, response):
         plan_start_time = time.time()
@@ -44,18 +60,21 @@ class PlanTabletPoseService(Node):
 
         # run planner
         try:
-            tablet_pose_world = self.planner.in_front_of_eyes(human)
+            (tablet_pose_robot_frame, human_head_root) = self.planner.in_front_of_eyes(human)
         except Exception as e:
             print("PlanTabletPoseService::plan_tablet_callback: " + str(e))
             response.success = False
             return response
         
-        if tablet_pose_world is None:
+        if tablet_pose_robot_frame is None:
             response.success = False
             return response
         
-        tablet_position = tablet_pose_world.translation()
-        tablet_orientation = R.from_matrix(tablet_pose_world.rotationMatrix()).as_quat().tolist()
+        tablet_position = tablet_pose_robot_frame.translation()
+        tablet_orientation = R.from_matrix(tablet_pose_robot_frame.rotationMatrix()).as_quat().tolist()
+
+        # broadcast
+        self.broadcast_static_tf(human_head_root, tablet_pose_robot_frame)
 
         # TODO: implement this after base localization works well
         # NOTE: the IK + sampling methods in planner.py need some TLC to get working again
@@ -68,7 +87,7 @@ class PlanTabletPoseService(Node):
 
         # solve ik
         ik_solution, _ = self.planner.ik_robot_frame(
-            robot_target = tablet_pose_world
+            robot_target = tablet_pose_robot_frame
             )
 
         # save response

@@ -10,7 +10,9 @@ from stretch_tablet.utils import spherical_to_cartesian, vector_projection
 
 import os
 import time
-from typing import List
+
+import numpy.typing  as npt
+from typing import Tuple, List
 
 # test
 import matplotlib.pyplot as plt
@@ -112,6 +114,9 @@ class TabletPlanner:
         """
 
         y = TabletPlanner._get_shoulder_vector(human)
+        if y is None:
+            raise ValueError("TabletPlanner::_get_head_shoulder_orientation: shoulder vector is None")
+        
         z = np.array([0, 0, 1])
         proj_z_y = vector_projection(z, y)
         y = y - proj_z_y
@@ -131,11 +136,21 @@ class TabletPlanner:
         return rotation_matrix
 
     @staticmethod
-    def in_front_of_eyes(human: Human) -> sp.SE3:
+    def in_front_of_eyes(human: Human) -> Tuple[sp.SE3]:
         """
         Returns the location of the tablet relative to the human.
         Places tablet in front of eyes.
-        Human's
+        Human's pose estimate should be in the robot's base frame.
+
+        Args:
+            human (Human): human object with populated pose estimate.
+
+        Returns:
+            Tuple[sp.SE3]: (tablet pose relative to robot's base, human head pose relative to robot's base)
+
+        Raises:
+            KeyError: keypoints missing from pose estimate
+
         """
 
         # define position and rotation of the tablet in head frame.
@@ -171,10 +186,10 @@ class TabletPlanner:
 
         tablet_robot_frame = human_head_root * tablet_head_frame
 
-        return tablet_robot_frame
+        return (tablet_robot_frame, human_head_root)
     
     @staticmethod
-    def compute_tablet_rotation_matrix(point: np.ndarray, azimuth: float) -> np.ndarray:
+    def compute_tablet_rotation_matrix(point: npt.ArrayLike, azimuth: float) -> np.ndarray:
         """
         Helper method to compute the rotation matrix associated with a point on a sphere.
         X points towards the center of the sphere.
@@ -182,7 +197,7 @@ class TabletPlanner:
         Z is the cross product of X and Y.
 
         Args:
-            point (np.array): 3x1 point on the surface of a sphere centered at [0, 0, 0]
+            point (npt.ArrayLike): 3x1 point on the surface of a sphere centered at [0, 0, 0]
             azimuth (float): angle (rad) rotated CW around Z
 
         Returns:
@@ -237,7 +252,7 @@ class TabletPlanner:
         
         return frames
     
-    def cost_midpoint_displacement(self, q) -> float:
+    def cost_midpoint_displacement(self, q: dict) -> float:
         """
         Computes midpoint displacement cost for a joint configuration q
 
@@ -333,12 +348,12 @@ class TabletPlanner:
     def reachable(human: Human):
         raise NotImplementedError
 
-    def fk(self, q_state: np.ndarray) -> sp.SE3:
+    def fk(self, q_state: npt.ArrayLike) -> sp.SE3:
         """
         Runs FK on robot pose.
 
         Args:
-            q_state (np.ndarray): joint state vector
+            q_state (npt.ArrayLike): joint state vector
 
         Returns:
             sp.SE3: transform from robot base link to end effector

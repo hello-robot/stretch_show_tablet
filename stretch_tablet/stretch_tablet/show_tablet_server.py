@@ -47,16 +47,17 @@ JOINT_NAME_SHORT_TO_FULL = {
 
 JOINT_NAME_FULL_TO_SHORT = {v: k for k, v in JOINT_NAME_SHORT_TO_FULL.items()}
 
+PI = np.pi
 PI_2 = np.pi/2.
 
 def enforce_limits(value, min_value, max_value):
     return min([max([min_value, value]), max_value])
 
 def enforce_joint_limits(pose: dict) -> dict:
-    pose["base"] = enforce_limits(pose["base"], -PI_2, PI_2)
+    pose["base"] = enforce_limits(pose["base"], -PI, PI)
     pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
     pose["arm_extension"] = enforce_limits(pose["arm_extension"], 0.02, 0.45)
-    pose["yaw"] = enforce_limits(pose["yaw"], -np.deg2rad(60.), PI_2)
+    pose["yaw"] = enforce_limits(pose["yaw"], -np.deg2rad(60.), PI)
     pose["pitch"] = enforce_limits(pose["pitch"], -PI_2, 0.2)
     # pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
     pose["roll"] = 0.
