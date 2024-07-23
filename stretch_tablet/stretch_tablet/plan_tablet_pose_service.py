@@ -3,9 +3,7 @@ from stretch_tablet_interfaces.srv import PlanTabletPose
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, Point, Quaternion
 
-import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
 
 from stretch_tablet.planner import TabletPlanner
@@ -14,7 +12,7 @@ from stretch_tablet.human import Human
 import json
 import time
 
-from stretch_tablet.utils_ros import point2tuple, quat2tuple, generate_pose_stamped
+from stretch_tablet.utils_ros import generate_pose_stamped
 
 # TODO: I got the below error somewhere in the service callback which caused the node to crash.
 # Errors like this should get caught and the service should cleanly return a failure response.
@@ -41,34 +39,32 @@ class PlanTabletPoseService(Node):
         plan_start_time = time.time()
         # generate human
         body_dict = json.loads(request.human_joint_dict_robot_frame)
-        # camera_position = point2tuple(request.camera_pose.pose.position)
-        # camera_orientation = R.from_quat(quat2tuple(request.camera_pose.pose.orientation)).as_matrix()
-        # camera_transform = sp.SE3(camera_orientation, camera_position)
-
         human = Human()
         human.pose_estimate.set_body_estimate_robot_frame(body_dict)
-        # human.pose_estimate.set_body_estimate_camera_frame(body_dict, camera_transform)
 
         # run planner
-        tablet_pose_world = self.planner.in_front_of_eyes(human)
+        try:
+            tablet_pose_world = self.planner.in_front_of_eyes(human)
+        except Exception as e:
+            print("PlanTabletPoseService::plan_tablet_callback: " + str(e))
+            response.success = False
+            return response
+        
         if tablet_pose_world is None:
             response.success = False
             return response
+        
         tablet_position = tablet_pose_world.translation()
         tablet_orientation = R.from_matrix(tablet_pose_world.rotationMatrix()).as_quat().tolist()
-        # self.get_logger().info(str(tablet_position))
-        # self.get_logger().info(str(tablet_orientation))
 
+        # TODO: implement this after base localization works well
+        # NOTE: the IK + sampling methods in planner.py need some TLC to get working again
         # optimize base location
         # base_location_world = self.planner.get_base_location(
         #     handle_cost_function=self.planner.cost_midpoint_displacement,
         #     tablet_pose_world=tablet_pose_world
         # )
-
-        # get robot base
-        # robot_position = point2tuple(request.robot_pose.pose.position)
-        # robot_orientation = R.from_quat(quat2tuple(request.robot_pose.pose.orientation)).as_matrix()
-        # robot_pose = sp.SE3(robot_orientation, robot_position)
+        # response.robot_base_pose_xy = [v for v in base_location_world]
 
         # solve ik
         ik_solution, _ = self.planner.ik_robot_frame(
@@ -79,7 +75,6 @@ class PlanTabletPoseService(Node):
         response.tablet_pose_robot_frame = generate_pose_stamped(tablet_position, tablet_orientation, self.now())
         response.robot_ik_joint_names = [k for k in ik_solution.keys()]
         response.robot_ik_joint_positions = [v for v in ik_solution.values()]
-        # response.robot_base_pose_xy = [v for v in base_location_world]
         response.plan_time_s = time.time() - plan_start_time
         response.success = True
 

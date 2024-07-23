@@ -10,10 +10,13 @@ from stretch_tablet.utils import spherical_to_cartesian, vector_projection
 
 import os
 import time
+from typing import List
 
 # test
 import matplotlib.pyplot as plt
 from stretch_tablet.plot_tools import plot_coordinate_frame
+
+EPS = 10.e-6
 
 class TabletPlanner:
     def __init__(self):
@@ -68,21 +71,55 @@ class TabletPlanner:
 
     @staticmethod
     def _get_shoulder_vector(human: Human) -> np.array:
-        l_shoulder = np.array(human.pose_estimate.body_estimate_robot_frame["left_shoulder"])
-        r_shoulder = np.array(human.pose_estimate.body_estimate_robot_frame["right_shoulder"])
-        # return l_shoulder - r_shoulder
+        """
+        Returns the vector pointing from the left shoulder to the right shoulder.
+
+        Args:
+            human (Human): human with populated pose estimate.
+
+        Returns:
+            np.ndarray: 3x1 vector
+        """
+
+        if not human.pose_estimate.is_body_populated():
+            raise AttributeError("TabletPlanner::_get_shoulder_vector: human body pose not populated!")
+        
+        try:
+            l_shoulder = np.array(human.pose_estimate.body_estimate_robot_frame["left_shoulder"])
+            r_shoulder = np.array(human.pose_estimate.body_estimate_robot_frame["right_shoulder"])
+        except KeyError as e:
+            print("TabletPlanner::_get_shoulder_vector: ", e)
+            return None
+        
+        if any(np.isnan(l_shoulder)) or any(np.isnan(r_shoulder)):
+            raise ValueError("TabletPlanner::_get_shoulder_vector: at least one shoulder is NaN!")
+
         return r_shoulder - l_shoulder
 
     @staticmethod
     def _get_head_shoulder_orientation(human: Human) -> np.ndarray:
         """
-        Gets orientation of the human based on the human's shoulder points
+        Gets orientation of the human based on the human's shoulder points.
+        X axis: pointing out of back of head.
+        Y axis: pointing from left to right shoulder.
+        Z axis: against gravity.
+
+        Args:
+            human (Human): human with populated pose estimate.
+
+        Returns:
+            np.ndarray: 3x3 rotation matrix corresponding to head coordinate frame
         """
+
         y = TabletPlanner._get_shoulder_vector(human)
         z = np.array([0, 0, 1])
         proj_z_y = vector_projection(z, y)
         y = y - proj_z_y
         x = np.cross(y, z)
+
+        for v in [x, y, z]:
+            if np.linalg.norm(v) < EPS:
+                raise ValueError("TabletPlanner::_get_head_shoulder_orientation: head rotation matrix creation failed, at least one axis has length 0!")
 
         # normalize
         x = x / np.linalg.norm(x)
@@ -96,35 +133,63 @@ class TabletPlanner:
     @staticmethod
     def in_front_of_eyes(human: Human) -> sp.SE3:
         """
-        Relative to eyes / forehead
-        Returns in world frame
+        Returns the location of the tablet relative to the human.
+        Places tablet in front of eyes.
+        Human's
         """
 
+        # define position and rotation of the tablet in head frame.
         d = human.preferences["eye_distance"]
         p = np.array([-d, 0., 0.])
-        # r = np.diag([-1., -1., 1.])  # Rotate Z by 180*
         r = np.eye(3)
+
         # TODO: add rotate about y by tilt_angle
         # TODO: add rotate about x by +/- 90 if portrait?
 
-        tablet = sp.SE3(r, p)
+        tablet_head_frame = sp.SE3(r, p)
 
+        # get head position
         try:
             human_head_root_robot_frame = human.pose_estimate.body_estimate_robot_frame["nose"]
         except KeyError as e:
             print("TabletPlanner::in_front_of_eyes: " + str(e))
             return None
 
-        r_head = TabletPlanner._get_head_shoulder_orientation(human)
-        human_head_root = sp.SE3(r_head, human_head_root_robot_frame)
+        # get head orientation
+        try:
+            r_head = TabletPlanner._get_head_shoulder_orientation(human)
+        except Exception as e:
+            print("TabletPlanner::in_front_of_eyes: " + str(e))
+            return None
+        
+        # make SE3 and catch errors (e.g., non-orthogonal R)
+        try:
+            human_head_root = sp.SE3(r_head, human_head_root_robot_frame)
+        except Exception as e:
+            print("TabletPlanner::in_front_of_eyes: " + str(e))
+            return None
 
-        tablet_world = human_head_root * tablet
+        tablet_robot_frame = human_head_root * tablet_head_frame
 
-        return tablet_world
+        return tablet_robot_frame
     
     @staticmethod
-    def compute_tablet_rotation_matrix(point, azimuth):
-        Rz = np.array([[np.cos(azimuth), -np.sin(azimuth), 0], [np.sin(azimuth), np.cos(azimuth), 0], [0, 0, 1]])
+    def compute_tablet_rotation_matrix(point: np.ndarray, azimuth: float) -> np.ndarray:
+        """
+        Helper method to compute the rotation matrix associated with a point on a sphere.
+        X points towards the center of the sphere.
+        Y attempts to point tangent to the sphere, parallel with the floor.
+        Z is the cross product of X and Y.
+
+        Args:
+            point (np.array): 3x1 point on the surface of a sphere centered at [0, 0, 0]
+            azimuth (float): angle (rad) rotated CW around Z
+
+        Returns:
+            np.ndarray: 3x3 rotation matrix
+        """
+
+        Rz = np.ndarray([[np.cos(azimuth), -np.sin(azimuth), 0], [np.sin(azimuth), np.cos(azimuth), 0], [0, 0, 1]])
 
         x = -1 * np.atleast_2d(point).T
         y = Rz @ (np.atleast_2d([0, -1, 0]).T)
@@ -138,16 +203,24 @@ class TabletPlanner:
         return r
 
     @staticmethod
-    def generate_tablet_view_points(radius=0.5, n=9):
+    def generate_tablet_view_points(radius: float=0.5, n: int=9) -> List[sp.SE3]:
         """
-        generates points in the head frame
+        Helper function to generate candidate tablet showing points around someone's head.
+
+        Args:
+            radius (float): radius from head in meters
+            n (int): 6 or 9, number of frames to test. 6 only contains points on sagittal plane and one side of the body.
+
+        Returns:
+            List[sp.SE3]: list length n of coordinate frames for tablet placements w.r.t. human head
         """
+
         if n == 9:
             azimuths = [-30., 0., 30.]
         elif n == 6:
             azimuths = [0., -30.]
         else:
-            raise ValueError
+            raise ValueError("TabletPlanner::generate_tablet_view_points: incorrect n of samples.")
         
         angles = [90., 112.5, 135.]
 
@@ -164,7 +237,16 @@ class TabletPlanner:
         
         return frames
     
-    def cost_midpoint_displacement(self, q):
+    def cost_midpoint_displacement(self, q) -> float:
+        """
+        Computes midpoint displacement cost for a joint configuration q
+
+        Args:
+            q (dict): joint configuration
+
+        Returns:
+            float: cost
+        """
         # see (3.57) in Siciliano - midpoint distance cost
         cost = 0.
         n = len(q.keys())
@@ -187,6 +269,18 @@ class TabletPlanner:
         return cost
 
     def _ik_cost_optimization_target(self, xy, handle_cost_function, world_target):
+        """
+        Wraps IK solver for use in optimizer.
+        TODO: check that this still works after API changes in July 2024
+
+        Args:
+            xy: TODO
+            handle_cost_function (function handle): function handle for cost function
+            world_target: TODO
+        
+        Returns:
+            list: 3x1 list [x, y, theta] of optimal base location
+        """
         # run IK
         r = np.eye(3)
         p = np.array([xy[0], xy[1], 0.])
@@ -204,6 +298,14 @@ class TabletPlanner:
         return total_cost
 
     def get_base_location(self, handle_cost_function, tablet_pose_world: sp.SE3):
+        """
+        Optimizes robot base location to present a tablet at a point in world coordinates.
+        TODO: check that this still works after API changes in July 2024
+
+        Args:
+            handle_cost_function (function handle): function handle for cost function
+            tablet_pose_world (sp.SE3): tablet pose in world coordinates
+        """
         # TODO: add in human pose for removing points near the human
 
         # heuristics from workspace sampling
@@ -231,15 +333,33 @@ class TabletPlanner:
     def reachable(human: Human):
         raise NotImplementedError
 
-    def fk(self, q_state) -> sp.SE3:
+    def fk(self, q_state: np.ndarray) -> sp.SE3:
+        """
+        Runs FK on robot pose.
+
+        Args:
+            q_state (np.ndarray): joint state vector
+
+        Returns:
+            sp.SE3: transform from robot base link to end effector
+        """
+
         position, orientation = self.ik_solver.compute_fk(q_state)
         r = R.from_quat(orientation).as_matrix()
         return sp.SE3(r, position)
 
-    def ik_robot_frame(self, robot_target: sp.SE3, debug: bool=False):
+    def ik_robot_frame(self, robot_target: sp.SE3, debug: bool=False) -> dict:
         """
-        robot_target (sp.SE3): target in robot base frame
+        Runs IK in the robot's base frame.
+
+        Args:
+            robot_target (sp.SE3): target in robot base frame
+            debug: unused
+        
+        Returns:
+            dict: joint state IK solution
         """
+
         # compute IK
         pos_desired = robot_target.translation()
         quat_desired = R.from_matrix(robot_target.rotationMatrix()).as_quat()
@@ -269,7 +389,19 @@ class TabletPlanner:
 
         return result, stats
 
-    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3(), debug: bool=False):
+    def ik(self, world_target: sp.SE3, world_base_link: sp.SE3 = sp.SE3(), debug: bool=False) -> dict:
+        """
+        Runs IK in the robot's base frame.
+        TODO: check that this still works after API changes in July 2024
+
+        Args:
+            world_target (sp.SE3): target in world frame
+            world_base_link (sp.SE3): location of robot base in world frame
+            debug: whether to check IK error and print to terminal
+        
+        Returns:
+            dict: joint state IK solution
+        """
         # transform target in world frame to base frame
         target_base_frame = world_base_link.inverse() * world_target
 
