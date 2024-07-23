@@ -499,8 +499,13 @@ class ShowTabletActionServer(Node):
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
 
-        # Because the goal was accepted, we are guarenteed to have a non-None
-        # `self.latest_average_pose` that is not stale (TODO).
+        n_samples = 10
+        self._pose_history = []
+        rate = self.create_rate(10.)
+
+        while rclpy.ok() and len(self._pose_history) < n_samples and not self.goal_handle.is_cancel_requested:
+            rate.sleep()
+
         self.human.pose_estimate = self.latest_average_pose
 
         return ShowTabletState.PLAN_TABLET_POSE
@@ -569,14 +574,14 @@ class ShowTabletActionServer(Node):
         self.__present_tablet(target)
         self.get_logger().info('Finished move_to_pose')
 
+        self.srv_toggle_navigation_mode.call(Trigger.Request())
+
         return ShowTabletState.EXIT
 
     def state_end_interaction(self):
         self.get_logger().info("Ending interaction...")
         if self.abort or self.goal_handle.is_cancel_requested:
             return ShowTabletState.ABORT
-
-        self.srv_toggle_navigation_mode.call(Trigger.Request())
 
         return ShowTabletState.EXIT
     
