@@ -8,6 +8,7 @@ from tf2_ros import StaticTransformBroadcaster
 
 from geometry_msgs.msg import TransformStamped, Transform, Vector3
 
+import numpy as np
 import sophuspy as sp
 from scipy.spatial.transform import Rotation as R
 
@@ -18,6 +19,7 @@ import json
 import time
 
 from stretch_tablet.utils_ros import generate_pose_stamped
+from stretch_tablet.planner_helpers import JOINT_LIMITS
 
 class PlanTabletPoseService(Node):
     def __init__(self):
@@ -25,6 +27,7 @@ class PlanTabletPoseService(Node):
         self.srv = self.create_service(PlanTabletPose, 'plan_tablet_pose', self.plan_tablet_callback)
         self.planner = TabletPlanner()
         self.static_transform_broadcaster = StaticTransformBroadcaster(self)
+        self.max_ik_error = 0.01
 
     def now(self):
         return self.get_clock().now().to_msg()
@@ -85,10 +88,33 @@ class PlanTabletPoseService(Node):
         # )
         # response.robot_base_pose_xy = [v for v in base_location_world]
 
-        # solve ik
+        # solve IK
         ik_solution, _ = self.planner.ik_robot_frame(
             robot_target = tablet_pose_robot_frame
             )
+        
+        # check adherence to joint limits
+        for joint_name, joint_position in ik_solution.items():
+            if joint_name in JOINT_LIMITS:
+                joint_limits = JOINT_LIMITS[joint_name]
+                if joint_position < joint_limits[0] or joint_position > joint_limits[1]:
+                    print("PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limits!")
+                    response.success = False
+                    return response
+        
+        # check IK accuracy
+        q = [v for v in ik_solution.values()]
+        fk = self.planner.fk(q)
+        fk_position = np.array(fk.translation())
+        fk_orientation = np.array(R.from_matrix(fk.rotationMatrix()).as_quat().tolist())
+
+        position_error = np.linalg.norm(tablet_position - fk_position)
+        orientation_error = np.linalg.norm(tablet_orientation - fk_orientation)
+
+        if position_error > self.max_ik_error or orientation_error > self.max_ik_error:
+            print("PlanTabletPoseService::plan_tablet_callback: IK error too large!")
+            response.success = False
+            return response
 
         # save response
         response.tablet_pose_robot_frame = generate_pose_stamped(tablet_position, tablet_orientation, self.now())

@@ -31,24 +31,13 @@ from rclpy.time import Time
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, Trigger
 from stretch_tablet.human import HumanPoseEstimate, transform_estimate_dict
+from stretch_tablet.planner_helpers import JOINT_NAME_SHORT_TO_FULL, JOINT_LIMITS
 from stretch_tablet.utils_ros import posestamped2se3
 from stretch_tablet_interfaces.action import ShowTablet
 from stretch_tablet_interfaces.srv import PlanTabletPose
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from trajectory_msgs.msg import JointTrajectoryPoint
-
-# TODO: It's not great that this map is essentially hardcoded into planner.py and
-# then replicated here. It should ideally be in a helper module that both classes
-# can access.
-JOINT_NAME_SHORT_TO_FULL = {
-    "base": "rotate_mobile_base",
-    "lift": "joint_lift",
-    "arm_extension": "wrist_extension",
-    "yaw": "joint_wrist_yaw",
-    "pitch": "joint_wrist_pitch",
-    "roll": "joint_wrist_roll",
-}
 
 
 class ShowTabletState(Enum):
@@ -603,6 +592,9 @@ class ShowTabletActionServer(Node):
 
         # Clear the human pose estimate for the action
         self.human_pose_estimate_for_action = None
+
+        # Switch robot back to navigation mode
+        # self.
 
     def error_action_execution(
         self,
@@ -1218,13 +1210,10 @@ def enforce_joint_limits(pose: Dict[str, float]) -> None:
     -------
     None (this function destructively modifies the input dictionary).
     """
-    pose["base"] = np.clip(pose["base"], -np.pi, np.pi)
-    pose["lift"] = np.clip(pose["lift"], 0.25, 1.1)
-    pose["arm_extension"] = np.clip(pose["arm_extension"], 0.02, 0.45)
-    pose["yaw"] = np.clip(pose["yaw"], -np.deg2rad(60.0), np.pi)
-    pose["pitch"] = np.clip(pose["pitch"], -np.pi / 2, 0.2)
-    # pose["roll"] = np.clip(pose["roll"], -np.pi/2, np.pi/2)
-    pose["roll"] = 0.0
+    for key in pose.keys():
+        if key in JOINT_LIMITS.keys():
+            pose[key] = np.clip(pose[key], JOINT_LIMITS[key][0], JOINT_LIMITS[key][1])
+
     return None
 
 
