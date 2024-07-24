@@ -6,7 +6,7 @@ from scipy.optimize import minimize
 from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
 
 from stretch_tablet.human import Human, generate_test_human
-from stretch_tablet.utils import spherical_to_cartesian, vector_projection
+from stretch_tablet.utils import spherical_to_cartesian, vector_projection, Ry
 
 import os
 import time
@@ -154,9 +154,13 @@ class TabletPlanner:
         """
 
         # define position and rotation of the tablet in head frame.
-        d = human.preferences["eye_distance"]
-        p = np.array([-d, 0., 0.])
-        r = np.eye(3)
+        d = human.preferences["eye_distance"]  # in front of the eyes
+        z = human.preferences["eye_height"]  # up from the eyes
+        d = -d  # x axis points out of the back of the head
+        p = np.array([d, 0., z])
+        # r = np.eye(3)
+        theta = human.preferences["tilt_angle"]
+        r = Ry(theta)
 
         # TODO: add rotate about y by tilt_angle
         # TODO: add rotate about x by +/- 90 if portrait?

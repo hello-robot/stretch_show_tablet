@@ -98,3 +98,13 @@ def get_vector_direction_image_plane(v: np.ndarray) -> Direction:
         return Direction.UP
     else:
         return Direction.LEFT
+
+def Ry(theta: float) -> np.ndarray:
+    """
+    theta: angle in radians
+    """
+    return np.array([
+        [np.cos(theta), 0, np.sin(theta)],
+        [0, 1, 0],
+        [-np.sin(theta), 0, np.cos(theta)]
+    ])

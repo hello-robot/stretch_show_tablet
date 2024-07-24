@@ -184,9 +184,11 @@ class Human:
 
     def init_preferences(self):
         p = {
-            "eye_distance": 0.5,  # 50cm, or ~19in
-            "portait": True,  # whether to use portrait instead of landscape
-            "tilt_angle": 0.  # radians
+            # "eye_distance": 0.5,  # 50cm, or ~19in
+            "eye_distance": 0.3,  # 40cm, or ~15.75in
+            "eye_height": -0.1,  # 10cm, or ~4in down from nose
+            "portait": False,  # whether to use portrait instead of landscape
+            "tilt_angle": np.deg2rad(-10.)  # radians (positive is down)
         }
 
         return p

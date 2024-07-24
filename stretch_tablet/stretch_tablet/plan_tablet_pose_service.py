@@ -98,7 +98,7 @@ class PlanTabletPoseService(Node):
             if joint_name in JOINT_LIMITS:
                 joint_limits = JOINT_LIMITS[joint_name]
                 if joint_position < joint_limits[0] or joint_position > joint_limits[1]:
-                    print("PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limits!")
+                    self.get_logger().error("PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit for " + str(joint_name))
                     response.success = False
                     return response
         
@@ -112,7 +112,7 @@ class PlanTabletPoseService(Node):
         orientation_error = np.linalg.norm(tablet_orientation - fk_orientation)
 
         if position_error > self.max_ik_error or orientation_error > self.max_ik_error:
-            print("PlanTabletPoseService::plan_tablet_callback: IK error too large!")
+            self.get_logger().error("PlanTabletPoseService::plan_tablet_callback: IK error too large!")
             response.success = False
             return response
 
