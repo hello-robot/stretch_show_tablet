@@ -108,31 +108,32 @@ class PlanTabletPoseService(Node):
             return response
         
         # check adherence to joint limits
-        # replan = False
+        replan = False
         for joint_name, joint_position in ik_solution.items():
             if joint_name in JOINT_LIMITS:
                 joint_limits = JOINT_LIMITS[joint_name]
                 if joint_position < joint_limits[0] or joint_position > joint_limits[1]:
-                    # if joint_name == "arm_extension":
-                    #     self.get_logger().warn("PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit for arm, replanning...")
-                    #     replan = True
-                    #     break
+                    if joint_name == "arm_extension":
+                        self.get_logger().warn("PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit for arm, replanning...")
+                        replan = True
+                        break
                     self.get_logger().error("PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit for " + str(joint_name))
                     response.success = False
                     return response
 
         # adjust to point at head if too far away
-        # if replan:
-        #     ik_solution, _ = self.planner.ik_robot_frame(
-        #         robot_target = human_head_root,
-        #     )
-            # ik_solution["arm_extension"] = max(JOINT_LIMITS["arm_extension"][0], min(ik_solution["arm_extension"], JOINT_LIMITS["arm_extension"][1]))
+        if replan:
+            ik_solution, _ = self.planner.ik_robot_frame(
+                robot_target = human_head_root,
+            )
+            ik_solution["arm_extension"] = max(JOINT_LIMITS["arm_extension"][0], min(ik_solution["arm_extension"], JOINT_LIMITS["arm_extension"][1]))
             # fk = self.planner.fk([v for v in ik_solution.values()])
             # fk_position = np.array(fk.translation())
             # position_error_vector = tablet_position - fk_position
             # xy = position_error_vector[:2]
             # theta = np.arctan2(xy[1], xy[0])
-            # ik_solution["yaw"] = theta
+            theta = 0.
+            ik_solution["yaw"] = theta
 
         # save response
         response.tablet_pose_robot_frame = generate_pose_stamped(tablet_position, tablet_orientation, self.now())
