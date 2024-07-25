@@ -399,6 +399,20 @@ class ShowTabletActionServer(Node):
             return
         if len(human_keypoints_in_camera_frame) == 0:
             return
+        
+        # filter points that are adjacent to camera (i.e., have bad color-depth alignment)
+        filtered_human_estimate = {}
+        for k in human_keypoints_in_camera_frame.keys():
+            try:
+                point = human_keypoints_in_camera_frame[k]
+                if np.linalg.norm(point) > 0.02:
+                    filtered_human_estimate[k] = point
+            except KeyError:
+                pass
+
+        human_keypoints_in_camera_frame = filtered_human_estimate
+
+        # check that all necessary joints are still present
         for joint_name in necessary_joints:
             if joint_name not in human_keypoints_in_camera_frame:
                 self.get_logger().error(
