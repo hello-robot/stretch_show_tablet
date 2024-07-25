@@ -140,7 +140,8 @@ class ShowTabletActionServer(Node):
             JointState,
             "/joint_states",
             callback=self.joint_state_callback,
-            qos_profile=1
+            qos_profile=1,
+            callback_group=MutuallyExclusiveCallbackGroup(),
             )
         self.joint_state = None
         self.pose_estimator_enabled_lock = threading.Lock()
@@ -1156,7 +1157,6 @@ class ShowTabletActionServer(Node):
             }
         else:
             pose_base = {
-                "base": 0.,
                 "lift": self.robot_target_joint_positions_for_action["lift"]
                 }
         pose_arm = {
@@ -1173,7 +1173,12 @@ class ShowTabletActionServer(Node):
 
         curr_head_pan = self.joint_state.position[self.joint_state.name.index("joint_head_pan")]
 
-        target_head_pan = curr_head_pan - pose_base["base"]
+        if "base" in pose_base.keys():
+            base_theta = pose_base["base"]
+        else:
+            base_theta = 0.
+            
+        target_head_pan = curr_head_pan - base_theta
         while target_head_pan < np.deg2rad(-230.):
             target_head_pan += 2.0 * np.pi
         while target_head_pan > np.deg2rad(90.):
