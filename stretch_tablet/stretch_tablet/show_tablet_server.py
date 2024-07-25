@@ -28,6 +28,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.task import Future
 from rclpy.time import Time
+from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, Trigger
 from stretch_tablet.human import HumanPoseEstimate, transform_estimate_dict
@@ -38,7 +39,6 @@ from stretch_tablet_interfaces.srv import PlanTabletPose
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from trajectory_msgs.msg import JointTrajectoryPoint
-
 
 class ShowTabletState(Enum):
     """
@@ -136,6 +136,13 @@ class ShowTabletActionServer(Node):
             qos_profile=QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT),
             callback_group=MutuallyExclusiveCallbackGroup(),
         )
+        self.joint_state_sub = self.create_subscription(
+            JointState,
+            "/joint_states",
+            callback=self.joint_state_callback,
+            qos_profile=1
+            )
+        self.joint_state = None
         self.pose_estimator_enabled_lock = threading.Lock()
         self.pose_estimator_enabled = False
         self.toggle_pose_estimation_srv = self.create_service(
@@ -349,6 +356,9 @@ class ShowTabletActionServer(Node):
         response.success = True
         response.message = "Success"
         return response
+
+    def joint_state_callback(self, msg: JointState) -> None:
+        self.joint_state = msg
 
     def body_landmarks_callback(self, msg: String, timeout: Duration) -> None:
         """
@@ -1131,7 +1141,10 @@ class ShowTabletActionServer(Node):
                 "lift": self.robot_target_joint_positions_for_action["lift"],
             }
         else:
-            pose_base = {"lift": self.robot_target_joint_positions_for_action["lift"]}
+            pose_base = {
+                "base": 0.,
+                "lift": self.robot_target_joint_positions_for_action["lift"]
+                }
         pose_arm = {
             "arm_extension": self.robot_target_joint_positions_for_action[
                 "arm_extension"
@@ -1140,9 +1153,22 @@ class ShowTabletActionServer(Node):
         pose_wrist = {
             "yaw": self.robot_target_joint_positions_for_action["yaw"],
             "pitch": self.robot_target_joint_positions_for_action["pitch"],
-            "roll": self.robot_target_joint_positions_for_action["roll"],
+            # "roll": self.robot_target_joint_positions_for_action["roll"],
+            "roll": 0.,  # Keep the wrist roll at 0 for now
         }
-        poses = [pose_tuck, pose_base, pose_arm, pose_wrist]
+
+        curr_head_pan = self.joint_state.position[self.joint_state.name.index("joint_head_pan")]
+
+        target_head_pan = curr_head_pan - pose_base["base"]
+        while target_head_pan < np.deg2rad(-230.):
+            target_head_pan += 2.0 * np.pi
+        while target_head_pan > np.deg2rad(90.):
+            target_head_pan -= 2.0 * np.pi
+
+        pose_head = {
+            "head_pan": target_head_pan
+        }
+        poses = [pose_tuck, pose_base, pose_arm, pose_wrist, pose_head]
 
         # Call the switch to position mode service
         service_generator = self.call_service(

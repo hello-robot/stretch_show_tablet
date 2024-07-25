@@ -7,6 +7,7 @@ JOINT_NAME_SHORT_TO_FULL = {
     "yaw": "joint_wrist_yaw",
     "pitch": "joint_wrist_pitch",
     "roll": "joint_wrist_roll",
+    "head_pan": "joint_head_pan",
 }
 
 # define joint limits from above function as a dict
@@ -17,4 +18,5 @@ JOINT_LIMITS = {
     "yaw": (-np.deg2rad(60.0), np.pi),
     "pitch": (-np.pi / 2, 0.325),
     "roll": (-np.pi/2, np.pi/2),
+    "head_pan": (-np.inf, np.inf),  # TODO: set these
 }
