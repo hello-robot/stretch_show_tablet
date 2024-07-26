@@ -17,6 +17,6 @@ JOINT_LIMITS = {
     "arm_extension": (0.02, 0.45),
     "yaw": (-np.deg2rad(60.0), np.pi),
     "pitch": (-np.pi / 2, 0.325),
-    "roll": (-np.pi/2, np.pi/2),
+    "roll": (-np.pi / 2, np.pi / 2),
     "head_pan": (-np.inf, np.inf),  # TODO: set these
 }

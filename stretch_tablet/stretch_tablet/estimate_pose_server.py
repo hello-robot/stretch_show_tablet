@@ -1,25 +1,23 @@
+# mypy: ignore-errors
+import json
+from enum import Enum
+
+import numpy as np
 import rclpy
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
+from geometry_msgs.msg import Point, PoseStamped
+from rclpy.action import ActionServer, CancelResponse
 from rclpy.action.server import ServerGoalHandle
-
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
 from std_msgs.msg import String
-from geometry_msgs.msg import PoseStamped, Point
-
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
-import numpy as np
-
+from stretch_tablet.human import HumanPoseEstimate
+from stretch_tablet.utils import load_bad_json_data
 from stretch_tablet_interfaces.action import EstimateHumanPose
 
-from enum import Enum
-import json
-
-from stretch_tablet.utils import load_bad_json_data
-from stretch_tablet.human import HumanPoseEstimate
 
 class EstimatePoseState(Enum):
     IDLE = 0
@@ -27,16 +25,17 @@ class EstimatePoseState(Enum):
     DONE = 2
     ERROR = 99
 
+
 class EstimatePoseActionServer(Node):
     def __init__(self):
         super().__init__("estimate_pose_action_server")
         self._action_server = ActionServer(
             self,
             EstimateHumanPose,
-            'estimate_human_pose',
+            "estimate_human_pose",
             self.execute_callback,
             callback_group=ReentrantCallbackGroup(),
-            cancel_callback=self.callback_action_cancel
+            cancel_callback=self.callback_action_cancel,
         )
 
         # sub
@@ -44,7 +43,7 @@ class EstimatePoseActionServer(Node):
             String,
             "/body_landmarks/landmarks_3d",
             callback=self.callback_body_landmarks,
-            qos_profile=1
+            qos_profile=1,
         )
 
         # tf
@@ -54,7 +53,7 @@ class EstimatePoseActionServer(Node):
         self._latest_human_pose_estimate = HumanPoseEstimate()
 
     # get / set
-    def get_latest_human_pose_estimate(self, filter_bad_points: bool=False):
+    def get_latest_human_pose_estimate(self, filter_bad_points: bool = False):
         """
         Args:
             filter_bad_points (bool): whether to remove points without an
@@ -82,7 +81,7 @@ class EstimatePoseActionServer(Node):
 
     # callbacks
     def callback_body_landmarks(self, msg: String):
-        msg_data = msg.data.replace("\"", "")
+        msg_data = msg.data.replace('"', "")
         if msg_data == "None" or msg_data is None:
             return
 
@@ -94,17 +93,20 @@ class EstimatePoseActionServer(Node):
 
     def callback_action_cancel(self, goal_handle: ServerGoalHandle):
         return CancelResponse.ACCEPT
-    
+
     def execute_callback(self, goal_handle: ServerGoalHandle):
-        self.get_logger().info('Executing Estimate Pose...')
+        self.get_logger().info("Executing Estimate Pose...")
         n_samples = goal_handle.request.number_of_samples
 
         # ROS Action stuff
         result = EstimateHumanPose.Result()
         feedback = EstimateHumanPose.Feedback()
-        
+
         pose_estimate = self.observe_human(n_samples=n_samples, goal_handle=goal_handle)
-        if pose_estimate.body_estimate is not None and len([k for k in pose_estimate.body_estimate.keys()]) > 0:
+        if (
+            pose_estimate.body_estimate is not None
+            and len([k for k in pose_estimate.body_estimate.keys()]) > 0
+        ):
             feedback.current_state = EstimatePoseState.DONE.value
             goal_handle.publish_feedback(feedback)
             goal_handle.succeed()
@@ -131,25 +133,32 @@ class EstimatePoseActionServer(Node):
 
         try:
             t = self.tf_buffer.lookup_transform(
-                    # "odom",
-                    "base_link",
-                    "camera_color_optical_frame",
-                    rclpy.time.Time())
-            
-            pos = Point(x=t.transform.translation.x,
-                        y=t.transform.translation.y,
-                        z=t.transform.translation.z)
+                # "odom",
+                "base_link",
+                "camera_color_optical_frame",
+                rclpy.time.Time(),
+            )
+
+            pos = Point(
+                x=t.transform.translation.x,
+                y=t.transform.translation.y,
+                z=t.transform.translation.z,
+            )
             msg.pose.position = pos
             msg.pose.orientation = t.transform.rotation
             msg.header.stamp = t.header.stamp
 
         except Exception as e:
             self.get_logger().error(str(e))
-            self.get_logger().error("EstimatePoseActionServer::lookup_camera_pose: returning empty pose!")
-        
+            self.get_logger().error(
+                "EstimatePoseActionServer::lookup_camera_pose: returning empty pose!"
+            )
+
         return msg
 
-    def observe_human(self, n_samples: int=1, goal_handle:ServerGoalHandle=None) -> HumanPoseEstimate:
+    def observe_human(
+        self, n_samples: int = 1, goal_handle: ServerGoalHandle = None
+    ) -> HumanPoseEstimate:
         """
         Args:
             n_samples (int): number of samples to average
@@ -159,20 +168,15 @@ class EstimatePoseActionServer(Node):
         """
         if goal_handle is None:
             raise ValueError
-        
+
         # ROS Action stuff
         feedback = EstimateHumanPose.Feedback()
         feedback.current_state = EstimatePoseState.ESTIMATE.value
 
-        necessary_keys = [
-            "nose",
-            "neck",
-            "right_shoulder",
-            "left_shoulder"
-        ]
+        necessary_keys = ["nose", "neck", "right_shoulder", "left_shoulder"]
 
         # loop inits
-        rate = self.create_rate(10.)
+        rate = self.create_rate(10.0)
         i = 0
         pose_estimates = [HumanPoseEstimate() for _ in range(n_samples)]
 
@@ -201,7 +205,7 @@ class EstimatePoseActionServer(Node):
                     self.get_logger().info("cannot see key joints!")
                     can_see = False
                     continue
-            
+
             if not can_see:
                 rate.sleep()
                 continue
@@ -215,7 +219,9 @@ class EstimatePoseActionServer(Node):
 
         # compute average estimate
         if populated:
-            average_pose_estimate = HumanPoseEstimate.average_pose_estimates(pose_estimates)
+            average_pose_estimate = HumanPoseEstimate.average_pose_estimates(
+                pose_estimates
+            )
             return average_pose_estimate
         else:
             return HumanPoseEstimate()
@@ -225,9 +231,11 @@ class EstimatePoseActionServer(Node):
         executor = MultiThreadedExecutor()
         rclpy.spin(self, executor=executor)
 
+
 def main():
     rclpy.init()
     EstimatePoseActionServer().main()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
