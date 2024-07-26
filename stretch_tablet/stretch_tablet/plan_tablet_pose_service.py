@@ -117,7 +117,9 @@ class PlanTabletPoseService(Node):
             return response
 
         # check adherence to joint limits
-        replan = False
+        out_of_range = False
+        replan_arm_extension = False
+        replan_lift = False
         for joint_name, joint_position in ik_solution.items():
             if joint_name in JOINT_LIMITS:
                 joint_limits = JOINT_LIMITS[joint_name]
@@ -127,17 +129,31 @@ class PlanTabletPoseService(Node):
                             "PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit"
                             " for arm, replanning..."
                         )
-                        replan = True
-                        break
-                    self.get_logger().error(
-                        "PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit for "
-                        + str(joint_name)
-                    )
-                    response.success = False
-                    return response
+                        replan_arm_extension = True
+                    elif joint_name == "lift":
+                        if joint_position > joint_limits[1]:
+                            # too high
+                            self.get_logger().warn(
+                                "PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit"
+                                " for lift, replanning..."
+                            )
+                            replan_lift = True
+                        else:
+                            # too low
+                            out_of_range = True
+                    else:
+                        out_of_range = True
+                        self.get_logger().error(
+                            "PlanTabletPoseService::plan_tablet_callback: IK solution violates joint limit for "
+                            + str(joint_name)
+                        )
+
+        if out_of_range:
+            response.success = False
+            return response
 
         # adjust to point at head if too far away
-        if replan:
+        if replan_arm_extension:
             ik_solution, _ = self.planner.ik_robot_frame(
                 robot_target=human_head_root,
             )
@@ -155,6 +171,18 @@ class PlanTabletPoseService(Node):
             # theta = np.arctan2(xy[1], xy[0])
             theta = 0.0
             ik_solution["yaw"] = theta
+
+        if replan_lift:
+            # set to max lift and pitch up a bit
+            ik_solution["lift"] = max(
+                JOINT_LIMITS["lift"][0],
+                min(
+                    ik_solution["lift"],
+                    JOINT_LIMITS["lift"][1],
+                ),
+            )
+
+            ik_solution["pitch"] = 0.325
 
         # save response
         response.tablet_pose_robot_frame = generate_pose_stamped(
