@@ -1,29 +1,27 @@
-#!/usr/bin/env python3
 import rclpy
 import rclpy.logging
-
 import rclpy.time
 from std_msgs.msg import String
-
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
-class DataRecorder():
+
+class DataRecorder:
     def __init__(self):
-        self.node = rclpy.create_node('data_recorder')
+        self.node = rclpy.create_node("data_recorder")
         # sub
         self.sub_face_landmarks = self.node.create_subscription(
             String,
             "/faces/landmarks_3d",
             callback=self.callback_face_landmarks,
-            qos_profile=1
+            qos_profile=1,
         )
 
         self.sub_body_landmarks = self.node.create_subscription(
             String,
             "/body_landmarks/landmarks_3d",
             callback=self.callback_body_landmarks,
-            qos_profile=1
+            qos_profile=1,
         )
 
         # tf
@@ -43,7 +41,7 @@ class DataRecorder():
     def callback_body_landmarks(self, msg: String):
         # print('callback_b')
         self.body_landmarks = msg.data
-    
+
     def clear_landmarks(self):
         self.face_landmarks = None
         self.body_landmarks = None
@@ -51,11 +49,11 @@ class DataRecorder():
     def write_pose_data(self, face_filename, body_filename):
         # print("Writing pose data to " + face_filename + " and " + body_filename)
         try:
-            face_file = open(face_filename, 'w')
-            body_file = open(body_filename, 'w')
-        except:
+            face_file = open(face_filename, "w")
+            body_file = open(body_filename, "w")
+        except Exception:
             return
-        
+
         face_file.write(self.face_landmarks)
         body_file.write(self.body_landmarks)
 
@@ -65,10 +63,10 @@ class DataRecorder():
     def write_camera_data(self, camera_filename):
         # print("Writing camera data to " + camera_filename)
         try:
-            camera_file = open(camera_filename, 'w')
-        except:
+            camera_file = open(camera_filename, "w")
+        except Exception:
             return
-        
+
         camera_file.write(str(self.latest_camera_pose))
 
         camera_file.close()
@@ -81,7 +79,7 @@ class DataRecorder():
 
         # loop
         i = 0
-        rate = self.node.create_rate(10., self.node.get_clock())
+        # rate = self.node.create_rate(10.0, self.node.get_clock())
 
         while rclpy.ok():
             # print(self.face_marker_array)
@@ -90,17 +88,23 @@ class DataRecorder():
                 # get camera pose
                 try:
                     t = self.tf_buffer.lookup_transform(
-                            "camera_color_optical_frame",
-                            "odom",
-                            rclpy.time.Time())
-                    
+                        "camera_color_optical_frame", "odom", rclpy.time.Time()
+                    )
+
                     camera_pos = t.transform.translation
                     camera_ori = t.transform.rotation
-                    self.latest_camera_pose = [[camera_pos.x, camera_pos.y, camera_pos.z],
-                                               [camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]]
+                    self.latest_camera_pose = [
+                        [camera_pos.x, camera_pos.y, camera_pos.z],
+                        [
+                            camera_ori.x,
+                            camera_ori.y,
+                            camera_ori.z,
+                            camera_ori.w,
+                        ],
+                    ]
                 except Exception as ex:
-                    print(ex)                
-                
+                    print(ex)
+
                 # set up data
                 face_file = data_dir + "face_" + str(i) + ".json"
                 body_file = data_dir + "body_" + str(i) + ".json"
@@ -110,16 +114,18 @@ class DataRecorder():
                 self.clear_landmarks()
 
                 i += 1
-            
+
             if i >= max_i:
                 return
-            
+
             rclpy.spin_once(self.node, timeout_sec=0.1)
+
 
 def main():
     rclpy.init()
     DataRecorder().main()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

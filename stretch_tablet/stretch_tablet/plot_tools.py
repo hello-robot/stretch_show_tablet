@@ -1,38 +1,42 @@
-import numpy as np
-import matplotlib.pyplot as plt
+import json
+import os
+
 import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.colors import ListedColormap, Normalize
 
-import os
-import json
 
 # helpers
-def plot_coordinate_frame(a, p, R, l):
+def plot_coordinate_frame(a, p, R, axis_length):
+    axis_length
     x0 = y0 = z0 = p
-    x1 = x0 + R[:, 0] * l
-    y1 = y0 + R[:, 1] * l
-    z1 = z0 + R[:, 2] * l
+    x1 = x0 + R[:, 0] * axis_length
+    y1 = y0 + R[:, 1] * axis_length
+    z1 = z0 + R[:, 2] * axis_length
 
     x = np.vstack([x0, x1]).T
     y = np.vstack([y0, y1]).T
     z = np.vstack([z0, z1]).T
 
-    a.plot(*x, color='r')
-    a.plot(*y, color='g')
-    a.plot(*z, color='b')
+    a.plot(*x, color="r")
+    a.plot(*y, color="g")
+    a.plot(*z, color="b")
 
-def plot_coordinate_frame_2d(a, p, R, l):
+
+def plot_coordinate_frame_2d(a, p, R, axis_length):
     x0 = y0 = p[:3]
     x_axis = R[:3, 0] / np.linalg.norm(R[:3, 0])
     y_axis = R[:3, 1] / np.linalg.norm(R[:3, 1])
-    x1 = x0 + x_axis * l
-    y1 = y0 + y_axis * l
+    x1 = x0 + x_axis * axis_length
+    y1 = y0 + y_axis * axis_length
 
     x = np.vstack([x0, x1]).T
     y = np.vstack([y0, y1]).T
 
-    a.plot(*x, color='r')
-    a.plot(*y, color='g')
+    a.plot(*x, color="r")
+    a.plot(*y, color="g")
+
 
 def points2np(points: list):
     points_np = np.zeros([3, len(points)])
@@ -42,6 +46,7 @@ def points2np(points: list):
 
     return points_np
 
+
 def plot_base_reachability(a, base_x, base_y, counts, targets):
     a.computed_zorder = False
 
@@ -49,7 +54,7 @@ def plot_base_reachability(a, base_x, base_y, counts, targets):
     plot_z = np.zeros_like(plot_x)
 
     # set up custom colormap
-    cmap_brg = cm.get_cmap('brg')
+    cmap_brg = cm.get_cmap("brg")
     custom_brg = cmap_brg(np.linspace(0.5, 1, len(targets) + 1))
     custom_brg = ListedColormap(custom_brg, N=len(targets))
 
@@ -58,7 +63,16 @@ def plot_base_reachability(a, base_x, base_y, counts, targets):
     plot_y = plot_y.flatten()
     plot_z = plot_z.flatten()
     counts = counts.flatten()
-    a.scatter(plot_x, plot_y, plot_z, c=counts, cmap=custom_brg, edgecolors='none', alpha=0.75, zorder=-1)
+    a.scatter(
+        plot_x,
+        plot_y,
+        plot_z,
+        c=counts,
+        cmap=custom_brg,
+        edgecolors="none",
+        alpha=0.75,
+        zorder=-1,
+    )
 
     # colorbar
     norm = Normalize(vmin=0, vmax=len(targets))
@@ -68,20 +82,24 @@ def plot_base_reachability(a, base_x, base_y, counts, targets):
 
     # targets
     for target in targets:
-        plot_coordinate_frame(a, target.translation(), target.rotationMatrix(), l=0.1)
+        plot_coordinate_frame(
+            a, target.translation(), target.rotationMatrix(), axis_length=0.1
+        )
+
 
 # test
 def test_plot_coord_frame():
     p = np.array([1, 1, 1]).T
     R = np.eye(3)
-    l = 0.1
+    axis_length = 0.1
 
     f = plt.figure()
-    ax = f.add_subplot(projection='3d')
-    
-    plot_coordinate_frame(ax, p, R, l)
+    ax = f.add_subplot(projection="3d")  # type: ignore[attr-defined]
+
+    plot_coordinate_frame(ax, p, R, axis_length)
 
     plt.show()
+
 
 # main
 def main(data_dir: str):
@@ -99,16 +117,18 @@ def main(data_dir: str):
         # print(points_np)
 
     f = plt.figure()
-    ax = f.add_subplot(projection='3d')
+    ax = f.add_subplot(projection="3d")  # type: ignore[attr-defined]
     ax.scatter(*points_np)
     plt.show()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", type=str)
 
     args = parser.parse_args()
-    
+
     main(args.data_dir)
     # test_plot_coord_frame()

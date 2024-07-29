@@ -1,6 +1,9 @@
 # Request
-string human_joint_dict
-geometry_msgs/PoseStamped camera_pose
+int32 DEFAULT_N_ESTIMATES = 10
+
+# NOTE: This is no longer used and should be removed. Instead, this parameter
+# is passed as an argument of the node.
+int32 number_of_pose_estimates
 
 ---
 # Result
@@ -9,7 +12,6 @@ int32 STATUS_CANCELED = 1
 int32 STATUS_ERROR = 2
 
 int32 status
-int32 result
 ---
 # Feedback
 int32 current_state

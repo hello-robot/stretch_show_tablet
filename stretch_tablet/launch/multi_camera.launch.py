@@ -4,14 +4,15 @@ import os
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from launch_ros.actions import Node
-
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 json_path = os.path.join(
-    get_package_share_directory("stretch_core"), "config", "HighAccuracyPreset.json"
+    get_package_share_directory("stretch_core"),
+    "config",
+    "HighAccuracyPreset.json",
 )
 D435_RESOLUTION = "424x240x15"
 D405_RESOLUTION = "480x270x15"
@@ -143,9 +144,11 @@ def apply_parameter_overrides(base_parameters, parameter_overrides):
         params.append(
             {
                 "name": name,
-                "default": parameter_overrides[name]
-                if name in parameter_overrides
-                else default,
+                "default": (
+                    parameter_overrides[name]
+                    if name in parameter_overrides
+                    else default
+                ),
                 "description": description,
             }
         )
@@ -258,7 +261,10 @@ def generate_launch_description():
             d405_params,
             "2",
             [
-                ("/gripper_camera/color/image_rect_raw", "/gripper_camera/image_raw"),
+                (
+                    "/gripper_camera/color/image_rect_raw",
+                    "/gripper_camera/image_raw",
+                ),
                 (
                     "/gripper_camera/color/image_rect_raw/compressed",
                     "/gripper_camera/image_raw/compressed",

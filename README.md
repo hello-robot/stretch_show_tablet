@@ -16,6 +16,7 @@ colcon build --packages-select stretch_tablet stretch_tablet_interfaces
 ```
 
 ## Python Dependencies
+
 `pip install sophuspy`
 
 # Notes
