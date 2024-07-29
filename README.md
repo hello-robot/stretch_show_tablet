@@ -27,14 +27,14 @@ On your robot:
 
 ```bash
 cd ~/ament_ws
-colcon build --packages-select stretch_tablet stretch_tablet_interfaces
+colcon build --packages-select stretch_show_tablet stretch_show_tablet_interfaces
 ```
 
 TODO: add `rosdep` install instructions
 
 ## Python Dependencies
 
-On your robot: 
+On your robot:
 
 ```bash
 cd ~/ament_ws/src/stretch_show_tablet
@@ -49,4 +49,4 @@ Work in progress...
 
 The **Stretch Show Tablet** action uses the human pose estimator from [Stretch Deep Perception](https://github.com/hello-robot/stretch_ros2/tree/humble/stretch_deep_perception) inside of Stretch ROS2.
 
-[Insert image of how the human's coordinate system is generated]
+\[Insert image of how the human's coordinate system is generated\]
