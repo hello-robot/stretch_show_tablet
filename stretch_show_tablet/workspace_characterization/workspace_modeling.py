@@ -5,10 +5,11 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import sophuspy as sp
-from human import generate_test_human
 from matplotlib.colors import Normalize
-from planner import TabletPlanner
-from plot_tools import (
+
+from stretch_show_tablet.human import generate_test_human
+from stretch_show_tablet.planner import TabletPlanner
+from stretch_show_tablet.plot_tools import (
     plot_base_reachability,
     plot_coordinate_frame,
     plot_coordinate_frame_2d,

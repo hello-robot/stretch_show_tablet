@@ -5,10 +5,10 @@ import mpl_toolkits.mplot3d.art3d as art3d
 import numpy as np
 import sophuspy as sp
 from matplotlib.patches import Circle
-from plot_tools import plot_base_reachability
 
-from .human import generate_test_human
-from .planner import TabletPlanner
+from stretch_show_tablet.human import generate_test_human
+from stretch_show_tablet.planner import TabletPlanner
+from stretch_show_tablet.plot_tools import plot_base_reachability
 
 
 def main(json_path: str):
