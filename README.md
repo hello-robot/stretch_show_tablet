@@ -10,6 +10,21 @@ Tested with python 3.10 on a [Stretch RE3](https://hello-robot.com/stretch-3-pro
 
 **Stretch Show Tablet** contains ROS2 packages for autonomously presenting a tablet to a human. These packages are integrated into the experimental branch `vinitha/tablet_placement` of the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository. Support for standalone code functionality is in progress.
 
+## Contents
+
+This repository contains two ROS2 packages: `stretch_show_tablet` and `stretch_show_tablet_interfaces`. Inverse kinematics are handled using the [Pinocchio IK solver](https://github.com/hello-robot/stretch_web_teleop/blob/master/stretch_web_teleop_helpers/pinocchio_ik_solver.py) from `stretch_web_teleop`.
+
+### stretch_show_tablet
+
+This package contains the ROS Actions, planning framework, and human perception logic required to perceive humans and plan tablet showing locations.
+
+* `plan_tablet_pose_service.py` accepts a `PlanTabletPose` service request and returns the location of a tablet relative to a human for easy viewing.
+* `show_tablet_server.py` exposes a ROS Action of type `ShowTablet`. This action estimates a human's pose, uses the pose estimate to plan a tablet location for easy viewing, and then sends motion commands to the `stretch_driver` to move the robot's end effector to the target location.
+
+### stretch_show_tablet_interfaces
+
+This package contains the service and action message definitions required by the `stretch_show_tablet` action servers and services.
+
 # Installation
 
 Clone this repository into your ROS2 workspace, such as:
