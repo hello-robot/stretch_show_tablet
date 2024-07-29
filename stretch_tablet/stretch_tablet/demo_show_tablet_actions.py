@@ -1,24 +1,20 @@
-import rclpy
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.node import Node
-from rclpy.action import ActionClient, GoalResponse, CancelResponse
-from rclpy.timer import Rate
-from stretch_tablet_interfaces.action import EstimateHumanPose, TrackHead, ShowTablet
-
-from stretch_tablet.utils import load_bad_json_data
-
-import sophuspy as sp
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-
 import threading
-import json
-
 from enum import Enum
 
-def run_action(action_handle: ActionClient, request, rate: Rate, feedback_callback=None):
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.timer import Rate
+
+from stretch_tablet_interfaces.action import EstimateHumanPose, ShowTablet, TrackHead
+
+
+def run_action(
+    action_handle: ActionClient, request, rate: Rate, feedback_callback=None
+):
     future = action_handle.send_goal_async(request, feedback_callback=feedback_callback)
-        
+
     # wait for server to accept goal
     while rclpy.ok():
         if future.done():
@@ -31,9 +27,10 @@ def run_action(action_handle: ActionClient, request, rate: Rate, feedback_callba
     result_future = goal_handle.get_result_async()
     while rclpy.ok() and not result_future.done():
         rate.sleep()
-    
+
     result = result_future.result().result
     return result
+
 
 class DemoState(Enum):
     IDLE = 0
@@ -42,29 +39,38 @@ class DemoState(Enum):
     TRACK_HEAD = 3
     EXIT = 99
 
+
 class DemoShowTablet(Node):
     def __init__(self):
-        super().__init__('demo_show_tablet')
+        super().__init__("demo_show_tablet")
         # actions
         self.act_estimate_pose = ActionClient(
-            self, EstimateHumanPose, "estimate_human_pose",
+            self,
+            EstimateHumanPose,
+            "estimate_human_pose",
         )
         self.act_show_tablet = ActionClient(
-            self, ShowTablet, "show_tablet",
+            self,
+            ShowTablet,
+            "show_tablet",
         )
         self.act_track_head = ActionClient(
-            self, TrackHead, "track_head",
+            self,
+            TrackHead,
+            "track_head",
         )
 
         # wait for servers
-        _wait_time = 10.
+        _wait_time = 10.0
         for act in [self.act_show_tablet, self.act_track_head]:
             if not act.wait_for_server(_wait_time):
-                self.get_logger().error("DemoShowTablet::init: did not find action servers, exiting...")
+                self.get_logger().error(
+                    "DemoShowTablet::init: did not find action servers, exiting..."
+                )
                 rclpy.shutdown()
 
         # config
-        self._wait_rate_hz = 10.
+        self._wait_rate_hz = 10.0
 
         # state
         self._body_pose_estimate = None
@@ -89,10 +95,10 @@ class DemoShowTablet(Node):
         # print("(E) Estimate Pose    (Q) Quit")
         print("(S) Show Tablet    (Q) Quit")
         ui = input("Selection:").lower()
-        
-        if ui == 's':
+
+        if ui == "s":
             return DemoState.SHOW_TABLET
-        elif ui == 'q':
+        elif ui == "q":
             return DemoState.EXIT
         else:
             return DemoState.IDLE
@@ -101,13 +107,18 @@ class DemoShowTablet(Node):
         # if self._body_pose_estimate is None:
         #     self.get_logger().warn("DemoShowTablet::state_show_tablet: body estimate is None!")
         #     return DemoState.ESTIMATE_POSE
-        
+
         # send request
         request = ShowTablet.Goal()
         # request.human_joint_dict = json.dumps(self._body_pose_estimate)
         # request.camera_pose = self._camera_pose
-        
-        result = run_action(self.act_show_tablet, request, self.rate, feedback_callback=self.callback_show_tablet_feedback)
+
+        result = run_action(  # noqa: F841
+            self.act_show_tablet,
+            request,
+            self.rate,
+            feedback_callback=self.callback_show_tablet_feedback,
+        )
 
         return DemoState.TRACK_HEAD
 
@@ -115,7 +126,12 @@ class DemoShowTablet(Node):
         # send request
         request = TrackHead.Goal()
 
-        result = run_action(self.act_track_head, request, self.rate, feedback_callback=self.callback_track_head_feedback)
+        result = run_action(  # noqa: F841
+            self.act_track_head,
+            request,
+            self.rate,
+            feedback_callback=self.callback_track_head_feedback,
+        )
 
         return DemoState.EXIT
 
@@ -145,8 +161,9 @@ class DemoShowTablet(Node):
                 state = DemoState.IDLE
 
             self.rate.sleep()
-        
+
         self.get_logger().info("DemoShowTablet: Done.")
+
 
 def main():
     rclpy.init()
@@ -175,5 +192,6 @@ def main():
     # Join the spin thread (so it is spinning in the main thread)
     spin_thread.join()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -1,29 +1,27 @@
+from enum import Enum
+
 import rclpy
-from rclpy.action import ActionServer, CancelResponse, GoalResponse, ActionClient
+from control_msgs.action import FollowJointTrajectory
+from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.action.server import ServerGoalHandle
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.node import Node
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.node import Node
 from rclpy.task import Future
-
-
-from std_msgs.msg import String, Bool
-from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
+from trajectory_msgs.msg import JointTrajectoryPoint
 
-from stretch_tablet_interfaces.action import TrackHead
-
+from stretch_tablet.control import TabletController
 from stretch_tablet.human import HumanPoseEstimate
 from stretch_tablet.utils import load_bad_json_data
-from stretch_tablet.control import TabletController
+from stretch_tablet_interfaces.action import TrackHead
 
-from enum import Enum
 
 def in_range(value, range):
     return True if value >= range[0] and value <= range[1] else False
+
 
 class HeadTrackerState(Enum):
     IDLE = 0
@@ -32,16 +30,18 @@ class HeadTrackerState(Enum):
     DONE = 3
     ERROR = 99
 
+
 class HeadTrackerServer(Node):
     def __init__(self):
-        super().__init__('head_tracker_action_server')
+        super().__init__("head_tracker_action_server")
         self._action_server = ActionServer(
             self,
             TrackHead,
-            'track_head',
+            "track_head",
             self.execute_callback,
             callback_group=ReentrantCallbackGroup(),
-            cancel_callback=self.callback_action_cancel)
+            cancel_callback=self.callback_action_cancel,
+        )
 
         # pub
         # TODO: publish toggles for the face tracker
@@ -51,14 +51,14 @@ class HeadTrackerServer(Node):
             String,
             "/faces_gripper/landmarks_3d",
             callback=self.callback_face_landmarks,
-            qos_profile=1
+            qos_profile=1,
         )
 
         self.sub_joint_state = self.create_subscription(
             JointState,
             "/joint_states",
             callback=self.callback_joint_state,
-            qos_profile=1
+            qos_profile=1,
         )
 
         # state
@@ -80,9 +80,9 @@ class HeadTrackerServer(Node):
     # callbacks
     def callback_action_cancel(self, goal_handle: ServerGoalHandle):
         return CancelResponse.ACCEPT
-    
-    def callback_face_landmarks(self, msg):        
-        msg_data = msg.data.replace("\"", "")
+
+    def callback_face_landmarks(self, msg):
+        msg_data = msg.data.replace('"', "")
         if msg_data == "None" or msg_data is None:
             return
 
@@ -100,36 +100,38 @@ class HeadTrackerServer(Node):
     # state machine
     def state_idle(self):
         return HeadTrackerState.TRACKING
-    
+
     def state_track_head(self):
         if self._pose_estimate.face_estimate is None:
             return HeadTrackerState.IDLE
-        
+
         # TODO: check if cannot_see_head
 
         try:
-            wrist_yaw_angle = self._joint_state.position[self._joint_state.name.index("joint_wrist_yaw")]
+            wrist_yaw_angle = self._joint_state.position[
+                self._joint_state.name.index("joint_wrist_yaw")
+            ]
         except ValueError as e:
             self.get_logger().error(str(e))
-            wrist_yaw_angle = 0.
+            wrist_yaw_angle = 0.0
 
         wrist_delta = self.controller.get_tablet_yaw_from_head_pose(self._pose_estimate)
         self.__command_move_wrist(wrist_yaw_angle + wrist_delta)
         return HeadTrackerState.TRACKING
-    
+
     def state_cannot_see_head(self):
         # TODO: populate
         return HeadTrackerState.CANNOT_SEE
 
     def state_done(self):
-        self.__command_move_wrist(0., move_time_s=2.)
+        self.__command_move_wrist(0.0, move_time_s=2.0)
         return HeadTrackerState.DONE
 
     def run_state_machine(self, goal_handle: ServerGoalHandle):
         self.state = HeadTrackerState.IDLE
         feedback = TrackHead.Feedback()
         result = TrackHead.Result()
-        rate = self.create_rate(1.)
+        rate = self.create_rate(1.0)
 
         while rclpy.ok():
             self.get_logger().info("Current State: " + str(self.state))
@@ -158,11 +160,11 @@ class HeadTrackerServer(Node):
         return result
 
     def execute_callback(self, goal_handle: ServerGoalHandle):
-        self.get_logger().info('Executing Track Head...')
+        self.get_logger().info("Executing Track Head...")
         return self.run_state_machine(goal_handle)
 
     # helpers
-    def __command_move_wrist(self, yaw_position, move_time_s: float=1.) -> Future:
+    def __command_move_wrist(self, yaw_position, move_time_s: float = 1.0) -> Future:
         # Create the goal
         wrist_goal = FollowJointTrajectory.Goal()
 
@@ -190,10 +192,12 @@ class HeadTrackerServer(Node):
         executor = MultiThreadedExecutor()
         rclpy.spin(self, executor=executor)
 
+
 def main():
     rclpy.init()
     HeadTrackerServer().main()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

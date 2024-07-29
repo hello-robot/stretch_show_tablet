@@ -1,14 +1,16 @@
 import numpy as np
 import sophuspy as sp
+from geometry_msgs.msg import Point, PoseStamped, Quaternion
 from scipy.spatial.transform import Rotation as R
 
-from geometry_msgs.msg import PoseStamped, Point, Quaternion
 
 def point2tuple(p: Point):
     return [p.x, p.y, p.z]
 
+
 def quat2tuple(q: Quaternion):
     return [q.x, q.y, q.z, q.w]
+
 
 def generate_pose_stamped(position, orientation, timestamp):
     pose_stamped = PoseStamped()
@@ -25,6 +27,7 @@ def generate_pose_stamped(position, orientation, timestamp):
     pose_stamped.pose.orientation = quat
     pose_stamped.header.stamp = timestamp
     return pose_stamped
+
 
 # conversions
 def posestamped2se3(pose_stamped: PoseStamped) -> sp.SE3:

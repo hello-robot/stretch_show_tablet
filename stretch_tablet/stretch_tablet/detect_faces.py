@@ -1,17 +1,17 @@
-#!/usr/bin/env python3
+import sys
 
 import cv2
-import sys
-from stretch_deep_perception import head_estimator as he
-from . import toggleable_detection_node as tdn
 from stretch_deep_perception import deep_learning_model_options as do
+from stretch_deep_perception import head_estimator as he
+
+from . import toggleable_detection_node as tdn
 
 
 def main():
-    print('cv2.__version__ =', cv2.__version__)
-    print('Python version (must be > 3.0):', sys.version)
-    assert(int(sys.version[0]) >= 3)
-    
+    print("cv2.__version__ =", cv2.__version__)
+    print("Python version (must be > 3.0):", sys.version)
+    assert int(sys.version[0]) >= 3
+
     ##############################################
     # Perform coarse filtering of 3D points using anthropometry
     #
@@ -31,33 +31,40 @@ def main():
     min_head_m = 0.08
     max_head_m = 0.4
     ##############################################
-        
+
     models_directory = do.get_directory()
-    print('Using the following directory for deep learning models:', models_directory)        
+    print(
+        "Using the following directory for deep learning models:",
+        models_directory,
+    )
     use_neural_compute_stick = do.use_neural_compute_stick()
     if use_neural_compute_stick:
-        print('Attempt to use an Intel Neural Compute Stick 2.')
+        print("Attempt to use an Intel Neural Compute Stick 2.")
     else:
-        print('Not attempting to use an Intel Neural Compute Stick 2.')
-    
-    detector = he.HeadPoseEstimator(models_directory,
-                                    use_neural_compute_stick=use_neural_compute_stick)
-    default_marker_name = 'face'
-    node_name = 'DetectFacesNode'
-    topic_base_name = 'faces'
+        print("Not attempting to use an Intel Neural Compute Stick 2.")
+
+    detector = he.HeadPoseEstimator(
+        models_directory, use_neural_compute_stick=use_neural_compute_stick
+    )
+    default_marker_name = "face"
+    node_name = "DetectFacesNode"
+    topic_base_name = "faces"
     fit_plane = False
-    node = tdn.ToggleableDetectionNode(detector,
-                            default_marker_name,
-                            node_name,
-                            topic_base_name,
-                            fit_plane,
-                            min_box_side_m=min_head_m,
-                            max_box_side_m=max_head_m)
+    node = tdn.ToggleableDetectionNode(
+        detector,
+        default_marker_name,
+        node_name,
+        topic_base_name,
+        fit_plane,
+        min_box_side_m=min_head_m,
+        max_box_side_m=max_head_m,
+    )
     node.main()
     # try:
     #     rospy.spin()
     # except KeyboardInterrupt:
     #     print('interrupt received, so shutting down')
 
-if __name__ == '__main__':    
+
+if __name__ == "__main__":
     main()

@@ -1,13 +1,16 @@
+import json
+
+import numpy as np
 import rclpy
 from hello_helpers.hello_misc import HelloNode
 from std_msgs.msg import String
-import json
-import numpy as np
 
-PI_2 = np.pi/2.
+PI_2 = np.pi / 2.0
+
 
 def enforce_limits(value, min_value, max_value):
     return min([max([min_value, value]), max_value])
+
 
 def enforce_joint_limits(pose: dict) -> dict:
     pose["lift"] = enforce_limits(pose["lift"], 0.25, 1.1)
@@ -17,6 +20,7 @@ def enforce_joint_limits(pose: dict) -> dict:
     pose["roll"] = enforce_limits(pose["roll"], -PI_2, PI_2)
 
     return pose
+
 
 class StretchMain(HelloNode):
     def __init__(self):
@@ -28,14 +32,14 @@ class StretchMain(HelloNode):
             String,
             "/stretch_tablet/move_by",
             callback=self.move_by,
-            qos_profile=1
+            qos_profile=1,
         )
 
         self.create_subscription(
             String,
             "/stretch_tablet/goal",
             callback=self.move_to_goal,
-            qos_profile=1
+            qos_profile=1,
         )
 
         self.init()
@@ -45,11 +49,7 @@ class StretchMain(HelloNode):
         """
         other init
         """
-        self.move_to_pose(
-            {
-                "joint_wrist_roll": 0.
-            }
-        )
+        self.move_to_pose({"joint_wrist_roll": 0.0})
 
     # callbacks
     def move_by(self, msg):
@@ -58,7 +58,7 @@ class StretchMain(HelloNode):
         delta = data["joint_wrist_yaw"]
         if abs(delta) < 0.001:
             return
-        
+
         max_delta = 0.1
         if abs(delta) > max_delta:
             delta = np.sign(delta) * max_delta
@@ -68,12 +68,12 @@ class StretchMain(HelloNode):
         names = current_state.name
         positions = current_state.position
         # self.get_logger().info(current_pose)
-        current_yaw_position = positions[names.index('joint_wrist_yaw')]
+        current_yaw_position = positions[names.index("joint_wrist_yaw")]
         cmd_yaw_position = current_yaw_position + delta
 
         self.move_to_pose({"joint_wrist_yaw": cmd_yaw_position}, blocking=False)
 
-    def move_to_goal(self, msg, confirm: bool=True):
+    def move_to_goal(self, msg, confirm: bool = True):
         # msg_data = msg.data.replace("\"", "")
         data = json.loads(msg.data)
         pose = enforce_joint_limits(data)
@@ -90,15 +90,17 @@ class StretchMain(HelloNode):
         if confirm:
             print("moving to pose:")
             print(pose_cmd)
-            if input("enter y to continue: ").lower() == 'y':
+            if input("enter y to continue: ").lower() == "y":
                 self.move_to_pose(pose_cmd)
             else:
                 print("aborting!")
         else:
             self.move_to_pose(pose_cmd)
 
+
 def main():
     StretchMain()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -1,23 +1,20 @@
+import json
+
+import numpy as np
 import rclpy
+import sophuspy as sp
 from rclpy.node import Node
-
+from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import String
-from geometry_msgs.msg import PoseStamped, Point, Quaternion
-
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
-import sophuspy as sp
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-
-import json
 from stretch_tablet.human import Human
 from stretch_tablet.planner import TabletPlanner
 from stretch_tablet.utils import load_bad_json_data
-
-from stretch_tablet_interfaces.srv import PlanTabletPose
 from stretch_tablet.utils_ros import generate_pose_stamped
+from stretch_tablet_interfaces.srv import PlanTabletPose
+
 
 class ShowTabletNode(Node):
     def __init__(self):
@@ -25,9 +22,7 @@ class ShowTabletNode(Node):
 
         # pub
         self.pub_tablet_goal = self.create_publisher(
-            String,
-            "/stretch_tablet/goal",
-            qos_profile=1
+            String, "/stretch_tablet/goal", qos_profile=1
         )
 
         # sub
@@ -35,19 +30,20 @@ class ShowTabletNode(Node):
             String,
             "/faces/landmarks_3d",
             callback=self.callback_face_landmarks,
-            qos_profile=1
+            qos_profile=1,
         )
 
         self.sub_body_landmarks = self.create_subscription(
             String,
             "/body_landmarks/landmarks_3d",
             callback=self.callback_body_landmarks,
-            qos_profile=1
+            qos_profile=1,
         )
 
         # srv
         self.srv_plan_tablet_pose = self.create_client(
-            PlanTabletPose, 'plan_tablet_pose')
+            PlanTabletPose, "plan_tablet_pose"
+        )
 
         # tf
         self.tf_buffer = Buffer()
@@ -63,7 +59,7 @@ class ShowTabletNode(Node):
 
     # callbacks
     def callback_face_landmarks(self, msg: String):
-        msg_data = msg.data.replace("\"", "")
+        msg_data = msg.data.replace('"', "")
         if msg_data == "None" or msg_data is None:
             return
 
@@ -74,7 +70,7 @@ class ShowTabletNode(Node):
         self.human.pose_estimate.set_face_estimate(data)
 
     def callback_body_landmarks(self, msg: String):
-        msg_data = msg.data.replace("\"", "")
+        msg_data = msg.data.replace('"', "")
         if msg_data == "None" or msg_data is None:
             return
 
@@ -83,7 +79,7 @@ class ShowTabletNode(Node):
         if data is None or data == "{}":
             return
         self.human.pose_estimate.set_body_estimate(data)
-    
+
     def clear_landmarks(self):
         self.human.pose_estimate.clear_estimates()
 
@@ -105,8 +101,12 @@ class ShowTabletNode(Node):
 
         # construct request
         request.human_joint_dict = body_string
-        request.camera_pose = generate_pose_stamped(camera_position, camera_orientation, self.now())
-        request.robot_pose = generate_pose_stamped([0.,0.,0.],[0.,0.,0.,1.], self.now())
+        request.camera_pose = generate_pose_stamped(
+            camera_position, camera_orientation, self.now()
+        )
+        request.robot_pose = generate_pose_stamped(
+            [0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], self.now()
+        )
 
         return request
 
@@ -114,25 +114,29 @@ class ShowTabletNode(Node):
     #     """
     #     returns the tablet's 6DOF pose in the robot's base frame
     #     """
-    #     return sp.SE3(R.from_quat(response.tablet_orientation_robot_frame).as_matrix(), response.tablet_position_robot_frame)
+    #     return sp.SE3(R.from_quat(response.tablet_orientation_robot_frame).as_matrix(),
+    #     response.tablet_position_robot_frame)
 
     # main
     def main(self):
         while rclpy.ok():
             try:
                 t = self.tf_buffer.lookup_transform(
-                        # "camera_color_optical_frame",
-                        # "odom",
-                        "odom",
-                        "camera_color_optical_frame",
-                        rclpy.time.Time())
-                
+                    # "camera_color_optical_frame",
+                    # "odom",
+                    "odom",
+                    "camera_color_optical_frame",
+                    rclpy.time.Time(),
+                )
+
                 camera_pos = t.transform.translation
                 camera_ori = t.transform.rotation
                 # self.latest_camera_pose = [[camera_pos.x, camera_pos.y, camera_pos.z],
                 #                             [camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]]
                 camera_position = np.array([camera_pos.x, camera_pos.y, camera_pos.z])
-                camera_orientation = R.from_quat([camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]).as_matrix()
+                camera_orientation = R.from_quat(
+                    [camera_ori.x, camera_ori.y, camera_ori.z, camera_ori.w]
+                ).as_matrix()
                 world2camera_pose = sp.SE3(camera_orientation, camera_position)
                 self.human.pose_estimate.set_camera_pose(world2camera_pose)
 
@@ -147,32 +151,41 @@ class ShowTabletNode(Node):
                             try:
                                 response = future.result()
                             except Exception as e:
-                                self.get_logger().info(
-                                    'Service call failed %r' % (e,))
+                                self.get_logger().info("Service call failed %r" % (e,))
                             break
 
                     if response.success:
                         # update ik
-                        ik_soln = {key: value for key, value in zip(response.robot_ik_joint_names, response.robot_ik_joint_positions)}
+                        ik_soln = {
+                            key: value
+                            for key, value in zip(
+                                response.robot_ik_joint_names,
+                                response.robot_ik_joint_positions,
+                            )
+                        }
                         msg = String()
                         msg.data = json.dumps(ik_soln)
                         self.get_logger().info("publishing " + msg.data)
                         self.pub_tablet_goal.publish(msg)
-                        
+
                         # debug
-                        self.get_logger().info("Plan Time: " + str(response.plan_time_s))
+                        self.get_logger().info(
+                            "Plan Time: " + str(response.plan_time_s)
+                        )
 
                     # clear buffer
                     self.human.pose_estimate.clear_estimates()
 
             except Exception as ex:
                 print(ex)
-            
+
             rclpy.spin_once(self, timeout_sec=0.1)
+
 
 def main():
     rclpy.init()
     ShowTabletNode().main()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

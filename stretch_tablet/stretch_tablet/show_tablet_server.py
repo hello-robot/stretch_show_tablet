@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 # Standard Imports
@@ -31,14 +30,16 @@ from rclpy.time import Time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, Trigger
-from stretch_tablet.human import HumanPoseEstimate, transform_estimate_dict
-from stretch_tablet.planner_helpers import JOINT_NAME_SHORT_TO_FULL, JOINT_LIMITS
-from stretch_tablet.utils_ros import posestamped2se3
-from stretch_tablet_interfaces.action import ShowTablet
-from stretch_tablet_interfaces.srv import PlanTabletPose
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from trajectory_msgs.msg import JointTrajectoryPoint
+
+from stretch_tablet.human import HumanPoseEstimate, transform_estimate_dict
+from stretch_tablet.planner_helpers import JOINT_LIMITS, JOINT_NAME_SHORT_TO_FULL
+from stretch_tablet.utils_ros import posestamped2se3
+from stretch_tablet_interfaces.action import ShowTablet
+from stretch_tablet_interfaces.srv import PlanTabletPose
+
 
 class ShowTabletState(Enum):
     """
@@ -142,15 +143,16 @@ class ShowTabletActionServer(Node):
             callback=self.joint_state_callback,
             qos_profile=1,
             callback_group=MutuallyExclusiveCallbackGroup(),
-            )
-        self.joint_state = None
+        )
+        self.joint_state = JointState()
         self.pose_estimator_enabled_lock = threading.Lock()
         self.pose_estimator_enabled = False
         self.toggle_pose_estimation_srv = self.create_service(
             SetBool,
             "/toggle_body_pose_estimator",
             partial(
-                self.toggle_pose_estimation_callback, timeout=Duration(seconds=2.0)
+                self.toggle_pose_estimation_callback,
+                timeout=Duration(seconds=2.0),
             ),
             callback_group=MutuallyExclusiveCallbackGroup(),
         )
@@ -197,7 +199,10 @@ class ShowTabletActionServer(Node):
             self.pose_history_lock.release()
 
     def push_to_pose_history(
-        self, pose: HumanPoseEstimate, timestamp: Time, acquire_lock: bool = True
+        self,
+        pose: HumanPoseEstimate,
+        timestamp: Time,
+        acquire_lock: bool = True,
     ) -> None:
         """
         Push a pose to the pose history. Note: the pose history lock must be
@@ -400,7 +405,7 @@ class ShowTabletActionServer(Node):
             return
         if len(human_keypoints_in_camera_frame) == 0:
             return
-        
+
         # filter points that are adjacent to camera (i.e., have bad color-depth alignment)
         filtered_human_estimate = {}
         for k in human_keypoints_in_camera_frame.keys():
@@ -576,7 +581,10 @@ class ShowTabletActionServer(Node):
         return CancelResponse.ACCEPT
 
     def check_ok(
-        self, goal_handle: ServerGoalHandle, start_time: Time, timeout: Duration
+        self,
+        goal_handle: ServerGoalHandle,
+        start_time: Time,
+        timeout: Duration,
     ) -> bool:
         """
         Check if the goal is still OK to execute.
@@ -1156,9 +1164,7 @@ class ShowTabletActionServer(Node):
                 "lift": self.robot_target_joint_positions_for_action["lift"],
             }
         else:
-            pose_base = {
-                "lift": self.robot_target_joint_positions_for_action["lift"]
-                }
+            pose_base = {"lift": self.robot_target_joint_positions_for_action["lift"]}
         pose_arm = {
             "arm_extension": self.robot_target_joint_positions_for_action[
                 "arm_extension"
@@ -1168,25 +1174,25 @@ class ShowTabletActionServer(Node):
             "yaw": self.robot_target_joint_positions_for_action["yaw"],
             "pitch": self.robot_target_joint_positions_for_action["pitch"],
             # "roll": self.robot_target_joint_positions_for_action["roll"],
-            "roll": 0.,  # Keep the wrist roll at 0 for now
+            "roll": 0.0,  # Keep the wrist roll at 0 for now
         }
 
-        curr_head_pan = self.joint_state.position[self.joint_state.name.index("joint_head_pan")]
+        curr_head_pan = self.joint_state.position[
+            self.joint_state.name.index("joint_head_pan")
+        ]
 
         if "base" in pose_base.keys():
             base_theta = pose_base["base"]
         else:
-            base_theta = 0.
-            
+            base_theta = 0.0
+
         target_head_pan = curr_head_pan - base_theta
-        while target_head_pan < np.deg2rad(-230.):
+        while target_head_pan < np.deg2rad(-230.0):
             target_head_pan += 2.0 * np.pi
-        while target_head_pan > np.deg2rad(90.):
+        while target_head_pan > np.deg2rad(90.0):
             target_head_pan -= 2.0 * np.pi
 
-        pose_head = {
-            "head_pan": target_head_pan
-        }
+        pose_head = {"head_pan": target_head_pan}
         poses = [pose_tuck, pose_base, pose_arm, pose_wrist, pose_head]
 
         # Call the switch to position mode service
