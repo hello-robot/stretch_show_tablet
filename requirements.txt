@@ -1,8 +1,8 @@
-# math
-cv2
 
 # visualization
 matplotlib
 numpy
+# math
+opencv-python
 scipy
 sophuspy
