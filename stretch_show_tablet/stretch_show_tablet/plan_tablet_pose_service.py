@@ -120,6 +120,7 @@ class PlanTabletPoseService(Node):
         out_of_range = False
         replan_arm_extension = False
         replan_lift = False
+        replan_yaw = False
         for joint_name, joint_position in ik_solution.items():
             if joint_name in JOINT_LIMITS:
                 joint_limits = JOINT_LIMITS[joint_name]
@@ -141,6 +142,8 @@ class PlanTabletPoseService(Node):
                         else:
                             # too low
                             out_of_range = True
+                    elif joint_name == "yaw":
+                        replan_yaw = True
                     else:
                         out_of_range = True
                         self.get_logger().error(
@@ -183,6 +186,9 @@ class PlanTabletPoseService(Node):
             )
 
             ik_solution["pitch"] = 0.325
+
+        if replan_yaw:
+            ik_solution["yaw"] = 0.0
 
         # save response
         response.tablet_pose_robot_frame = generate_pose_stamped(
