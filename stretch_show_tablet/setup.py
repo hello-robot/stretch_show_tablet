@@ -45,7 +45,7 @@ setup(
             "plan_tablet_pose_service = stretch_show_tablet.plan_tablet_pose_service:main",
             "track_head_server = stretch_show_tablet.track_head_server:main",
             "planner_service_test = stretch_show_tablet.planner_service_test:main",
-            "demo_show_tablet = stretch_show_tablet.demo_show_tablet_actions:main",
+            "demo_show_tablet = stretch_show_tablet.demo_show_tablet_action:main",
         ],
     },
 )

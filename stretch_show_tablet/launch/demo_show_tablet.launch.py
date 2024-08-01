@@ -41,19 +41,7 @@ def generate_launch_description():
         output="screen",
     )
 
-    detect_faces = Node(
-        package="stretch_show_tablet",
-        executable="detect_faces_gripper",
-        output="screen",
-    )
-
     # actions and services
-    estimate_pose_server = Node(  # noqa: F841
-        package="stretch_show_tablet",
-        executable="estimate_pose_server",
-        output="screen",
-    )
-
     show_tablet_server = Node(
         package="stretch_show_tablet",
         executable="show_tablet_server",
@@ -63,12 +51,6 @@ def generate_launch_description():
     planner_service = Node(
         package="stretch_show_tablet",
         executable="plan_tablet_pose_service",
-        output="screen",
-    )
-
-    track_head_server = Node(
-        package="stretch_show_tablet",
-        executable="track_head_server",
         output="screen",
     )
 
@@ -97,12 +79,8 @@ def generate_launch_description():
             stretch_driver,
             multi_camera_launch,
             detect_body_landmarks,
-            detect_faces,
-            # estimate_pose_server,
             show_tablet_server,
             planner_service,
-            track_head_server,
-            # demo_node,
             # rviz_node,  # uncomment if not running headless
         ]
     )
