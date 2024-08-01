@@ -286,7 +286,7 @@ class DemoShowTablet(Node):
 
         return DemoState.IDLE
 
-    def state_jog_head(self) -> DemoState:
+    def state_jog_head(self, print_tip: bool = True) -> DemoState:
         """
         Prints the jog head menu and waits for user input.
         Allows the user to jog the robot's head to point at a person.
@@ -300,6 +300,13 @@ class DemoShowTablet(Node):
         print("(I) Up      (K) Down")
         print("(J) Left    (L) Right")
         print("(Q) Quit")
+
+        if print_tip:
+            print(" ")
+            print("(!) Tip (!)")
+            print("Point the head at a person to improve pose estimation.")
+            print(" ")
+
         ui = input("Selection:").lower()
 
         if ui == "q":

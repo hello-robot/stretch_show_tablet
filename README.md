@@ -10,11 +10,11 @@ Tested with python 3.10 on a [Stretch RE3](https://hello-robot.com/stretch-3-pro
 
 ![Show Tablet](res/show_tablet.png)
 
-**Stretch Show Tablet** contains ROS2 packages for autonomously presenting a tablet to a human. These packages are integrated into the experimental branch `vinitha/tablet_placement` of the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository. Support for standalone code functionality is in progress.
+**Stretch Show Tablet** contains ROS2 packages for autonomously presenting a tablet to a human. These packages are integrated into the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository, and can also be used as a standalone ROS2 action. See the Examples section below for usage examples.
 
 ## Contents
 
-This repository contains two ROS2 packages: `stretch_show_tablet` and `stretch_show_tablet_interfaces`. Inverse kinematics are handled using the [Pinocchio IK solver](https://github.com/hello-robot/stretch_web_teleop/blob/master/stretch_web_teleop_helpers/pinocchio_ik_solver.py) from `stretch_web_teleop`.
+This repository contains two ROS2 packages: `stretch_show_tablet` and `stretch_show_tablet_interfaces`. Inverse kinematics are handled using the [Pinocchio IK solver](https://github.com/hello-robot/stretch_web_teleop/blob/master/stretch_web_teleop_helpers/pinocchio_ik_solver.py) from `stretch_web_teleop_helpers` from the the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository.
 
 ### stretch_show_tablet
 
@@ -47,7 +47,7 @@ cd ~/ament_ws
 colcon build --packages-select stretch_show_tablet stretch_show_tablet_interfaces
 ```
 
-TODO: add `rosdep` install instructions
+TODO: add `rosdep` install instructions for web teleop (IK solver)
 
 ## Python Dependencies
 
@@ -92,4 +92,4 @@ ros2 action send_goal /show_tablet stretch_show_tablet_interfaces/action/ShowTab
 
 The **Stretch Show Tablet** action uses the human pose estimator from [Stretch Deep Perception](https://github.com/hello-robot/stretch_ros2/tree/humble/stretch_deep_perception) inside of Stretch ROS2.
 
-\[Insert image of how the human's coordinate system is generated\]
+The location of the tablet is specified relative to the human's head. The orientation of the tablet is computed using the location of the human's shoulders - in most cases, the tablet's surface is parallel to the plane containing the person's shoulders and the gravity vector.
