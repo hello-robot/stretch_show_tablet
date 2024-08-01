@@ -19,6 +19,19 @@ from stretch_show_tablet_interfaces.action import ShowTablet
 def run_action(
     action_handle: ActionClient, request, rate: Rate, feedback_callback=None
 ):
+    """
+    Runs an action and waits for the result.
+
+    Args:
+        action_handle (ActionClient): action client handle
+        request (Any): action request
+        rate (Rate): rate object
+        feedback_callback (Callable): callback for feedback
+
+    Returns:
+        Any: action result
+    """
+
     future = action_handle.send_goal_async(request, feedback_callback=feedback_callback)
 
     # wait for server to accept goal
@@ -39,6 +52,10 @@ def run_action(
 
 
 class DemoState(Enum):
+    """
+    States for the demo state machine.
+    """
+
     IDLE = 0
     TOGGLE_DETECTION = 1
     SHOW_TABLET = 2
@@ -65,7 +82,7 @@ class DemoShowTablet(Node):
             "show_tablet",
         )
 
-        self.srv_move_arm = ActionClient(
+        self.act_move_arm = ActionClient(
             self,
             FollowJointTrajectory,
             "/stretch_controller/follow_joint_trajectory",
@@ -112,6 +129,16 @@ class DemoShowTablet(Node):
         self,
         move_time_sec: float = 4.0,
     ) -> FollowJointTrajectory.Goal:
+        """
+        Generates a FollowJointTrajectory goal to retract the arm to 0.05m.
+
+        Args:
+            move_time_sec (float): time to complete the move
+
+        Returns:
+            FollowJointTrajectory.Goal: goal
+        """
+
         joint_positions = [0.05]
         trajectory = FollowJointTrajectory.Goal()
         trajectory.trajectory.joint_names = ["wrist_extension"]
@@ -128,6 +155,18 @@ class DemoShowTablet(Node):
         delta_pan: float,
         move_time_sec: float = 0.5,
     ) -> FollowJointTrajectory.Goal:
+        """
+        Generates a FollowJointTrajectory goal to jog the head.
+
+        Args:
+            delta_tilt (float): change in tilt (radians)
+            delta_pan (float): change in pan (radians)
+            move_time_sec (float): time to complete the move
+
+        Returns:
+            FollowJointTrajectory.Goal: goal
+        """
+
         # get current head position
         current_tilt = self._joint_state.position[
             self._joint_state.name.index("joint_head_tilt")
@@ -149,6 +188,13 @@ class DemoShowTablet(Node):
 
     # states
     def state_idle(self) -> DemoState:
+        """
+        Prints the main menu and waits for user input.
+
+        Returns:
+            DemoState: next state
+        """
+
         print(" ")
         print("=" * 5 + " Main Menu " + 5 * "=")
         print("(T) Toggle Pose Estimator    (S) Show Tablet")
@@ -170,7 +216,15 @@ class DemoShowTablet(Node):
             return DemoState.IDLE
 
     def state_toggle_detection(self) -> DemoState:
+        """
+        Sends a blocking request to toggle the pose estimator.
+
+        Returns:
+            DemoState: next state
+        """
+
         self.get_logger().info("DemoShowTablet: Toggling Pose Estimator...")
+
         # send request
         request = SetBool.Request()
         request.data = not self._toggle_detection
@@ -186,6 +240,13 @@ class DemoShowTablet(Node):
         return DemoState.IDLE
 
     def state_show_tablet(self) -> DemoState:
+        """
+        Sends a blocking request to show the tablet.
+
+        Returns:
+            DemoState: next state
+        """
+
         if not self._toggle_detection:
             self.get_logger().error("DemoShowTablet: Pose Estimator is not running")
             return DemoState.IDLE
@@ -206,12 +267,19 @@ class DemoShowTablet(Node):
         return DemoState.IDLE
 
     def state_retract_arm(self) -> DemoState:
+        """
+        Sends a blocking request to retract the arm.
+
+        Returns:
+            DemoState: next state
+        """
+
         self.get_logger().info("DemoShowTablet: Retracting Arm...")
         # send request
         request = self.create_retract_arm_goal()
 
         result = run_action(  # noqa: F841
-            self.srv_move_arm,
+            self.act_move_arm,
             request,
             self.rate,
         )
@@ -219,6 +287,14 @@ class DemoShowTablet(Node):
         return DemoState.IDLE
 
     def state_jog_head(self) -> DemoState:
+        """
+        Prints the jog head menu and waits for user input.
+        Allows the user to jog the robot's head to point at a person.
+
+        Returns:
+            DemoState: next state
+        """
+
         print(" ")
         print("=" * 5 + " Jog Head Menu " + 5 * "=")
         print("(I) Up      (K) Down")
@@ -242,10 +318,13 @@ class DemoShowTablet(Node):
             delta_pan = -0.1
 
         # send request
-        request = self.create_jog_head_goal(delta_tilt=delta_tilt, delta_pan=delta_pan)
+        if abs(delta_tilt) > 0.0 or abs(delta_pan) > 0.0:
+            request = self.create_jog_head_goal(
+                delta_tilt=delta_tilt, delta_pan=delta_pan
+            )
 
         result = run_action(  # noqa: F841
-            self.srv_move_arm,
+            self.act_move_arm,
             request,
             self.rate,
         )
@@ -253,10 +332,20 @@ class DemoShowTablet(Node):
         return DemoState.JOG_HEAD
 
     def state_exit(self) -> DemoState:
+        """
+        Exit and cleanup.
+
+        Returns:
+            DemoState: next state
+        """
         self.get_logger().info("DemoShowTablet: Exiting!")
         return DemoState.EXIT
 
     def run(self):
+        """
+        Main state machine loop.
+        """
+
         state = DemoState.IDLE
 
         self.rate = self.create_rate(self._wait_rate_hz)
@@ -289,7 +378,7 @@ def main():
     node = DemoShowTablet()
     executor = MultiThreadedExecutor(num_threads=4)
 
-    # Spin in the background since detecting faces will block
+    # Spin in the background since node has blocking behavior
     # the main thread
     spin_thread = threading.Thread(
         target=rclpy.spin,
@@ -299,7 +388,7 @@ def main():
     )
     spin_thread.start()
 
-    # Run face detection
+    # Run demo
     try:
         node.run()
     except KeyboardInterrupt:
