@@ -8,6 +8,8 @@ Tested with python 3.10 on a [Stretch RE3](https://hello-robot.com/stretch-3-pro
 
 # Overview
 
+![Show Tablet](res/show_tablet.png)
+
 **Stretch Show Tablet** contains ROS2 packages for autonomously presenting a tablet to a human. These packages are integrated into the experimental branch `vinitha/tablet_placement` of the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository. Support for standalone code functionality is in progress.
 
 ## Contents
