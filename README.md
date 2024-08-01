@@ -58,7 +58,33 @@ pip install requirements.txt
 
 # Examples
 
-Work in progress...
+There are several ways to interact with the **Stretch Show Tablet** action server.
+
+## Web Teleoperation Integration
+
+The best way to interact with the **Stretch Show Tablet** action server is through the [Stretch Web Teleop](https://github.com/hello-robot/stretch_web_teleop) application.
+
+TODO: Add details for how to enable tablet showing in web teleop!
+
+## Demo: Command Line Interface
+
+In two terminals, run the following commands:
+
+Terminal one: `ros2 launch stretch_show_tablet demo_show_tablet.launch.py`
+
+Terminal two: `ros2 run stretch_show_tablet demo_show_tablet`
+
+The `demo_show_tablet` node will send a `ShowTablet` action request to the `show_tablet_server` action server. The action server will estimate the human's pose and plan a tablet location for easy viewing. Be sure to enable the pose estimator in the demo node CLI menu!
+
+## Sending a ShowTablet Action Request
+
+It is also possible to directly interact with the `show_tablet_server` action server using the `ros2 action send_goal` command. For example, to send a `ShowTablet` action request to the `show_tablet_server` action server, run the following commands one at a time:
+
+```bash
+ros2 launch stretch_show_tablet demo_show_tablet.launch.py
+ros2 service call /toggle_body_pose_estimator std_srvs/srv/SetBool "{data: True}"
+ros2 action send_goal /show_tablet stretch_show_tablet_interfaces/action/ShowTablet number_of_pose_estimates:\ 10
+```
 
 # Notes
 
