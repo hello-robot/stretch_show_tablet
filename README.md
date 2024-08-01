@@ -18,8 +18,8 @@ This repository contains two ROS2 packages: `stretch_show_tablet` and `stretch_s
 
 This package contains the ROS Actions, planning framework, and human perception logic required to perceive humans and plan tablet showing locations.
 
-* `plan_tablet_pose_service.py` accepts a `PlanTabletPose` service request and returns the location of a tablet relative to a human for easy viewing.
-* `show_tablet_server.py` exposes a ROS Action of type `ShowTablet`. This action estimates a human's pose, uses the pose estimate to plan a tablet location for easy viewing, and then sends motion commands to the `stretch_driver` to move the robot's end effector to the target location.
+- `plan_tablet_pose_service.py` accepts a `PlanTabletPose` service request and returns the location of a tablet relative to a human for easy viewing.
+- `show_tablet_server.py` exposes a ROS Action of type `ShowTablet`. This action estimates a human's pose, uses the pose estimate to plan a tablet location for easy viewing, and then sends motion commands to the `stretch_driver` to move the robot's end effector to the target location.
 
 ### stretch_show_tablet_interfaces
 
