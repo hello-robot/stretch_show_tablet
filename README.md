@@ -16,7 +16,7 @@ These packages are integrated into the [Stretch Web Teleoperation](https://githu
 
 ## Contents
 
-This repository contains two ROS2 packages: `stretch_show_tablet` and `stretch_show_tablet_interfaces`. Inverse kinematics are handled using the [Pinocchio IK solver](https://github.com/hello-robot/stretch_web_teleop/blob/master/stretch_web_teleop_helpers/pinocchio_ik_solver.py) from `stretch_web_teleop_helpers` from the the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository.
+This repository contains two ROS2 packages: `stretch_show_tablet` and `stretch_show_tablet_interfaces`. Inverse kinematics are handled using the [Pinocchio IK solver](https://github.com/hello-robot/stretch_web_teleop/blob/master/stretch_web_teleop_helpers/pinocchio_ik_solver.py) from `stretch_web_teleop_helpers` in the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository.
 
 ### stretch_show_tablet
 
