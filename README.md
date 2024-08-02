@@ -10,7 +10,9 @@ Tested with python 3.10 on a [Stretch RE3](https://hello-robot.com/stretch-3-pro
 
 ![Show Tablet](res/show_tablet.png)
 
-**Stretch Show Tablet** contains ROS2 packages for autonomously presenting a tablet to a human. These packages are integrated into the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository, and can also be used as a standalone ROS2 action. See the Examples section below for usage examples.
+**Stretch Show Tablet** contains ROS2 packages for autonomously presenting a tablet to a human. These packages leverage the human pose estimation deep model from [Stretch Deep Perception](https://github.com/hello-robot/stretch_ros2/tree/humble/stretch_deep_perception). The tablet location is specified relative to the human's pose estimate.
+
+These packages are integrated into the [Stretch Web Teleoperation](https://github.com/hello-robot/stretch_web_teleop) repository, and can also be used as a standalone ROS2 action. See the Examples section below for usage examples.
 
 ## Contents
 
@@ -76,7 +78,7 @@ Terminal one: `ros2 launch stretch_show_tablet demo_show_tablet.launch.py`
 
 Terminal two: `ros2 run stretch_show_tablet demo_show_tablet`
 
-The `demo_show_tablet` node will send a `ShowTablet` action request to the `show_tablet_server` action server. The action server will estimate the human's pose and plan a tablet location for easy viewing. Be sure to enable the pose estimator in the demo node CLI menu!
+The `demo_show_tablet` contains a command line menu system for testing the tablet showing routine. Enter commands to enable the pose estimator and jog the robot's camera to point at a human. You can then send a `ShowTablet` action request to the `show_tablet_server` action server. The action server will estimate the human's pose and plan a tablet location for easy viewing.
 
 ## Sending a ShowTablet Action Request
 
