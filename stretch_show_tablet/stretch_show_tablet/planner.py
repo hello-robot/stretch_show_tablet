@@ -9,7 +9,7 @@ import numpy.typing as npt
 import sophuspy as sp
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as R
-from stretch.motion.pinocchio_ik_solver import PinocchioIKSolver
+from stretch_web_teleop_helpers.pinocchio_ik_solver import PinocchioIKSolver
 
 from stretch_show_tablet.human import Human, generate_test_human
 from stretch_show_tablet.plot_tools import plot_coordinate_frame
