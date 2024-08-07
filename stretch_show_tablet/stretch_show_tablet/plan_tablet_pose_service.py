@@ -69,6 +69,8 @@ class PlanTabletPoseService(Node):
                 tablet_pose_robot_frame,
                 human_head_root,
             ) = self.planner.in_front_of_eyes(human)
+            self.get_logger().info(f'tablet_pose_robot_frame: {tablet_pose_robot_frame.translation()}')
+            self.get_logger().info(f'human_head_root: {human_head_root.translation()}')
         except Exception as e:
             print("PlanTabletPoseService::plan_tablet_callback: " + str(e))
             response.success = False
@@ -82,7 +84,7 @@ class PlanTabletPoseService(Node):
         tablet_orientation = (
             R.from_matrix(tablet_pose_robot_frame.rotationMatrix()).as_quat().tolist()
         )
-
+        human_head_position = np.array(human_head_root.translation())
         # broadcast
         self.broadcast_static_tf(human_head_root, tablet_pose_robot_frame)
 
@@ -99,15 +101,21 @@ class PlanTabletPoseService(Node):
         ik_solution, _ = self.planner.ik_robot_frame(
             robot_target=tablet_pose_robot_frame
         )
+        self.get_logger().info(f"ik_solution, {ik_solution}")
 
         # check IK accuracy
         q = [v for v in ik_solution.values()]
+        self.get_logger().info(f"q, {q}")
         fk = self.planner.fk(q)
         fk_position = np.array(fk.translation())
+        self.get_logger().info(f"fk_position, {fk_position}")
         fk_orientation = np.array(R.from_matrix(fk.rotationMatrix()).as_quat().tolist())
+        self.get_logger().info(f"fk_orientation, {fk_orientation}")
 
         position_error = np.linalg.norm(tablet_position - fk_position)
+        self.get_logger().info(f"position_error, {position_error}")
         orientation_error = np.linalg.norm(tablet_orientation - fk_orientation)
+        self.get_logger().info(f"orientation_error, {orientation_error}")
 
         if position_error > self.max_ik_error or orientation_error > self.max_ik_error:
             self.get_logger().error(
@@ -167,12 +175,26 @@ class PlanTabletPoseService(Node):
                     JOINT_LIMITS["arm_extension"][1],
                 ),
             )
-            # fk = self.planner.fk([v for v in ik_solution.values()])
-            # fk_position = np.array(fk.translation())
-            # position_error_vector = tablet_position - fk_position
-            # xy = position_error_vector[:2]
-            # theta = np.arctan2(xy[1], xy[0])
-            theta = 0.0
+            fk = self.planner.fk([v for v in ik_solution.values()])
+            fk_position = np.array(fk.translation())
+            
+            position_error_vector = human_head_position - fk_position
+            self.get_logger().info(f'position_error_vector: {position_error_vector}')
+            xy = position_error_vector[:2]
+            theta = np.arctan2(xy[1], xy[0]) 
+            self.get_logger().info(f'Before theta: {theta}')
+            theta += np.pi/2 - ik_solution["base"]
+
+            while theta < JOINT_LIMITS["yaw"][0]:
+                theta += 2.0 * np.pi
+            while theta > JOINT_LIMITS["yaw"][1]:
+                theta -= 2.0 * np.pi
+            if theta < JOINT_LIMITS["yaw"][0]:
+                self.get_logger().info(f'yaw out of limit: {theta}')
+                theta = 0.0 
+
+            self.get_logger().info(f'After theta: {theta}')
+            # theta = 0.0
             ik_solution["yaw"] = theta
 
         if replan_lift:
